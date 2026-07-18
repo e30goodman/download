@@ -36,7 +36,7 @@ import {
 	removeBrowserDownloadRecords,
 } from "../../lib/direct-download-history";
 import {
-	createBrowserDownloadUrl,
+	createBrowserBatchDownloadUrl,
 	eventsUrl,
 	orpcClient,
 } from "../../lib/orpc-client";
@@ -346,15 +346,7 @@ export const DownloadPage = () => {
 	};
 
 	const handleDownloadSelected = () => {
-		for (const id of selectedDownloadIds) {
-			const anchor = document.createElement("a");
-			anchor.href = createBrowserDownloadUrl(id);
-			anchor.rel = "noopener noreferrer";
-			anchor.style.display = "none";
-			document.body.append(anchor);
-			anchor.click();
-			anchor.remove();
-		}
+		window.location.assign(createBrowserBatchDownloadUrl(selectedDownloadIds));
 		handleClearSelection();
 	};
 

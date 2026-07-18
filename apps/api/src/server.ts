@@ -8,6 +8,7 @@ import { OpenAPIHandler } from '@orpc/openapi/fastify'
 import { OpenAPIReferencePlugin } from '@orpc/openapi/plugins'
 import { RPCHandler } from '@orpc/server/fastify'
 import { ZodToJsonSchemaConverter } from '@orpc/zod/zod4'
+import { ZipArchive } from 'archiver'
 import Fastify from 'fastify'
 import { downloadDir, startTaskQueue, stopTaskQueue, taskQueue } from './lib/downloader'
 import { projectTaskForApi } from './lib/projection'
@@ -25,6 +26,7 @@ import { subscriptionsRouter } from './lib/subscriptions-router'
 
 const MAX_PROXY_IMAGE_BYTES = 10 * 1024 * 1024
 const MAX_PROXY_REDIRECTS = 5
+const MAX_BATCH_DOWNLOAD_FILES = 25
 const PUBLIC_SITE_ORIGIN =
   process.env.VIDBEE_PUBLIC_SITE_ORIGIN?.trim() || 'https://e30goodman.github.io'
 const PUBLIC_FILE_RETENTION_MS = 6 * 60 * 60 * 1000
@@ -344,6 +346,75 @@ export const createApiServer = async () => {
     } catch {
       return reply.code(404).send({ message: 'Download file was not found.' })
     }
+  })
+
+  fastify.get<{
+    Querystring: { ids?: string; session?: string }
+  }>('/downloads/files.zip', async (request, reply) => {
+    const publicSessionId = parsePublicSessionId(request.query.session)
+    if (isPublicSiteEnabled && !publicSessionId) {
+      return reply.code(401).send({ message: 'A valid public session is required.' })
+    }
+
+    const requestedIds = Array.from(
+      new Set(
+        (request.query.ids ?? '')
+          .split(',')
+          .map((id) => id.trim())
+          .filter(Boolean)
+      )
+    )
+    if (requestedIds.length === 0 || requestedIds.length > MAX_BATCH_DOWNLOAD_FILES) {
+      return reply.code(400).send({
+        message: `Select between 1 and ${MAX_BATCH_DOWNLOAD_FILES} downloads.`
+      })
+    }
+
+    const files: Array<{ fileName: string; filePath: string }> = []
+    for (const id of requestedIds) {
+      const task = taskQueue.get(id)
+      if (!(task && taskBelongsToPublicSession(task, publicSessionId))) {
+        return reply.code(404).send({ message: 'One or more downloads were not found.' })
+      }
+      if (task.status !== 'completed' || !task.output?.filePath) {
+        return reply.code(409).send({ message: 'One or more downloads are not ready.' })
+      }
+
+      const filePath = path.resolve(task.output.filePath)
+      if (!isPathWithinDownloadDirectory(filePath)) {
+        return reply.code(403).send({ message: 'Download path is not allowed.' })
+      }
+      try {
+        const fileInfo = await stat(filePath)
+        if (!fileInfo.isFile()) {
+          return reply.code(404).send({ message: 'One or more download files were not found.' })
+        }
+      } catch {
+        return reply.code(404).send({ message: 'One or more download files were not found.' })
+      }
+
+      files.push({
+        fileName: path.basename(filePath).replace(/["\r\n]/g, '_'),
+        filePath
+      })
+    }
+
+    const archive = new ZipArchive({ store: true })
+    archive.on('warning', (error) => {
+      fastify.log.warn(error, 'Batch download archive warning')
+    })
+    const archiveName = `downloads-${new Date().toISOString().slice(0, 10)}.zip`
+    reply.header('Cache-Control', 'private, no-store')
+    reply.header('Content-Type', 'application/zip')
+    reply.header('Content-Disposition', `attachment; filename="${archiveName}"`)
+    for (const [index, file] of files.entries()) {
+      const duplicateIndex = files.findIndex((entry) => entry.fileName === file.fileName)
+      const archiveFileName =
+        duplicateIndex === index ? file.fileName : `${index + 1}-${file.fileName}`
+      archive.file(file.filePath, { name: archiveFileName })
+    }
+    void archive.finalize()
+    return reply.send(archive)
   })
 
   // Subscriptions live behind their own oRPC handler so the contract surface

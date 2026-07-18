@@ -59,3 +59,14 @@ export const createBrowserDownloadUrl = (downloadId: string): string => {
 	const query = sessionId ? `?session=${encodeURIComponent(sessionId)}` : "";
 	return `${apiUrl}/downloads/${encodeURIComponent(downloadId)}/file${query}`;
 };
+
+export const createBrowserBatchDownloadUrl = (downloadIds: string[]): string => {
+	const query = new URLSearchParams({
+		ids: downloadIds.join(","),
+	});
+	const sessionId = getPublicSessionId();
+	if (sessionId) {
+		query.set("session", sessionId);
+	}
+	return `${apiUrl}/downloads/files.zip?${query.toString()}`;
+};
