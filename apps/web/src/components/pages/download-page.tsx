@@ -35,7 +35,11 @@ import {
 	readBrowserDownloadHistory,
 	removeBrowserDownloadRecords,
 } from "../../lib/direct-download-history";
-import { eventsUrl, orpcClient } from "../../lib/orpc-client";
+import {
+	createBrowserDownloadUrl,
+	eventsUrl,
+	orpcClient,
+} from "../../lib/orpc-client";
 import { readOrpcDownloadSettings } from "../../lib/orpc-download-settings";
 import { readWebSettings } from "../../lib/web-settings";
 import { DownloadDialog } from "../download/download-dialog";
@@ -283,6 +287,18 @@ export const DownloadPage = () => {
 
 	const selectableCount = selectableIds.length;
 	const selectedCount = selectedIds.size;
+	const selectedDownloadIds = useMemo(
+		() =>
+			allRecords
+				.filter(
+					(record) =>
+						selectedIds.has(record.id) &&
+						record.entryType === "history" &&
+						record.status === "completed",
+				)
+				.map((record) => record.id),
+		[allRecords, selectedIds],
+	);
 	const visibleSelectableCount = visibleHistoryIds.length;
 	const selectionSummary =
 		selectableCount === 0
@@ -327,6 +343,19 @@ export const DownloadPage = () => {
 
 	const handleClearSelection = () => {
 		setSelectedIds(new Set());
+	};
+
+	const handleDownloadSelected = () => {
+		for (const id of selectedDownloadIds) {
+			const anchor = document.createElement("a");
+			anchor.href = createBrowserDownloadUrl(id);
+			anchor.rel = "noopener noreferrer";
+			anchor.style.display = "none";
+			document.body.append(anchor);
+			anchor.click();
+			anchor.remove();
+		}
+		handleClearSelection();
 	};
 
 	const handleRequestDeleteSelected = () => {
@@ -769,6 +798,15 @@ export const DownloadPage = () => {
 								</span>
 							</div>
 							<div className="flex flex-wrap items-center gap-2">
+								{selectedDownloadIds.length > 0 && (
+									<Button
+										className="h-8 rounded-full px-3"
+										onClick={handleDownloadSelected}
+										size="sm"
+									>
+										{t("menu.download")} ({selectedDownloadIds.length})
+									</Button>
+								)}
 								<Button
 									className="h-8 rounded-full px-3"
 									onClick={handleClearSelection}
