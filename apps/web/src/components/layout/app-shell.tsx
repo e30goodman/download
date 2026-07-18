@@ -20,14 +20,6 @@ export const AppShell = ({ children, page }: AppShellProps) => {
 	const navigate = useNavigate();
 	const logoSrc = `${import.meta.env.BASE_URL}app-icon.svg`;
 
-	const openSupportedSites = () => {
-		window.open(
-			"https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md",
-			"_blank",
-			"noopener,noreferrer",
-		);
-	};
-
 	const items: AppSidebarItem[] = [
 		{
 			id: "home",
@@ -38,19 +30,27 @@ export const AppShell = ({ children, page }: AppShellProps) => {
 				void navigate({ to: "/" });
 			},
 		},
-		{
+	];
+	if (!siteConfig.isPublicSite) {
+		items.push({
 			id: "subscriptions",
 			disabled: true,
 			icon: appSidebarIcons.subscriptions,
 			label: t("menu.rss"),
-		},
-		{
+		});
+		items.push({
 			id: "supported-sites",
 			icon: appSidebarIcons.supportedSites,
 			label: t("menu.supportedSites"),
-			onClick: openSupportedSites,
-		},
-	];
+			onClick: () => {
+				window.open(
+					"https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md",
+					"_blank",
+					"noopener,noreferrer",
+				);
+			},
+		});
+	}
 
 	const bottomItems: AppSidebarItem[] = [];
 	if (!siteConfig.isPublicSite) {
@@ -65,18 +65,18 @@ export const AppShell = ({ children, page }: AppShellProps) => {
 				void navigate({ to: "/settings" });
 			},
 		});
+		bottomItems.push({
+			id: "about",
+			active: page === "about",
+			icon: appSidebarIcons.about,
+			label: t("menu.about"),
+			onClick: () => {
+				void navigate({ to: "/about" });
+			},
+			showLabel: false,
+			showTooltip: true,
+		});
 	}
-	bottomItems.push({
-		id: "about",
-		active: page === "about",
-		icon: appSidebarIcons.about,
-		label: t("menu.about"),
-		onClick: () => {
-			void navigate({ to: "/about" });
-		},
-		showLabel: false,
-		showTooltip: true,
-	});
 
 	return (
 		<div className="flex h-screen flex-row">
