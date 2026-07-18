@@ -132,7 +132,15 @@ Optional env vars (via `.env`):
 VIDBEE_API_PORT=3100
 VIDBEE_WEB_PORT=3000
 VITE_API_URL=http://localhost:3100
+SPOTDL_PATH=C:\path\to\spotdl.exe
 ```
+
+Only Spotify track links are supported, and they require
+[spotDL 4.5.0](https://github.com/spotDL/spotify-downloader) on the API host. spotDL is
+used only as a metadata/provider matcher for a verified YouTube Music/YouTube source; the
+existing yt-dlp/FFmpeg pipeline performs the download. Spotify media is not downloaded,
+and Spotify DRM is never accessed or bypassed. `SPOTDL_PATH` may point to an isolated
+absolute spotDL executable.
 
 ## 🤝 Contributing
 

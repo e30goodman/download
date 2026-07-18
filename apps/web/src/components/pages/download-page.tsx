@@ -1,10 +1,10 @@
-import { Button } from "@vidbee/ui/components/ui/button";
-import { CardContent, CardHeader } from "@vidbee/ui/components/ui/card";
-import { Checkbox } from "@vidbee/ui/components/ui/checkbox";
 import {
 	buildFilePathCandidates,
 	normalizeSavedFileName,
 } from "@vidbee/downloader-core/download-file";
+import { Button } from "@vidbee/ui/components/ui/button";
+import { CardContent, CardHeader } from "@vidbee/ui/components/ui/card";
+import { Checkbox } from "@vidbee/ui/components/ui/checkbox";
 import {
 	Dialog,
 	DialogContent,
@@ -20,16 +20,32 @@ import {
 } from "@vidbee/ui/components/ui/download-filter-bar";
 import { ScrollArea } from "@vidbee/ui/components/ui/scroll-area";
 import { cn } from "@vidbee/ui/lib/cn";
-import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import {
+	useCallback,
+	useEffect,
+	useId,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import {
+	mergeDownloadRecords,
+	readBrowserDownloadHistory,
+	removeBrowserDownloadRecords,
+} from "../../lib/direct-download-history";
 import { eventsUrl, orpcClient } from "../../lib/orpc-client";
 import { readOrpcDownloadSettings } from "../../lib/orpc-download-settings";
 import { readWebSettings } from "../../lib/web-settings";
 import { DownloadDialog } from "../download/download-dialog";
 import { DownloadItem } from "../download/download-item";
 import { PlaylistDownloadGroup } from "../download/playlist-download-group";
-import type { DownloadRecord, StatusFilter } from "../download/types";
+import type {
+	DownloadRecord,
+	ServerDownloadRecord,
+	StatusFilter,
+} from "../download/types";
 import { AppShell } from "../layout/app-shell";
 
 type ConfirmAction =
@@ -77,39 +93,53 @@ export const DownloadPage = () => {
 	const alsoDeleteFilesId = useId();
 	const [isApiReachable, setIsApiReachable] = useState(false);
 	const [apiConnectionMessage, setApiConnectionMessage] = useState("");
+	const refreshGenerationRef = useRef(0);
 
 	const refreshData = useCallback(async () => {
+		const generation = refreshGenerationRef.current + 1;
+		refreshGenerationRef.current = generation;
 		try {
 			const [downloadsResult, historyResult] = await Promise.all([
 				orpcClient.downloads.list(),
 				orpcClient.history.list(),
 			]);
+			if (generation !== refreshGenerationRef.current) {
+				return;
+			}
 
-			const activeEntries: DownloadRecord[] = downloadsResult.downloads.map(
-				(record) => ({
+			const activeEntries: ServerDownloadRecord[] =
+				downloadsResult.downloads.map((record) => ({
 					...record,
 					entryType: "active",
-				}),
-			);
-			const historyEntries: DownloadRecord[] = historyResult.history.map(
+				}));
+			const historyEntries: ServerDownloadRecord[] = historyResult.history.map(
 				(record) => ({
 					...record,
 					entryType: "history",
 				}),
 			);
 
-			const merged = [...activeEntries, ...historyEntries].sort(
-				(left, right) => {
-					const leftTime = left.completedAt ?? left.createdAt;
-					const rightTime = right.completedAt ?? right.createdAt;
-					return rightTime - leftTime;
-				},
+			setAllRecords(
+				mergeDownloadRecords(
+					[...activeEntries, ...historyEntries],
+					readBrowserDownloadHistory(),
+				),
 			);
-
-			setAllRecords(merged);
 			setIsApiReachable(true);
 			setApiConnectionMessage("");
 		} catch (error) {
+			if (generation !== refreshGenerationRef.current) {
+				return;
+			}
+			setAllRecords((current) =>
+				mergeDownloadRecords(
+					current.filter(
+						(record): record is ServerDownloadRecord =>
+							record.entryType !== "browser",
+					),
+					readBrowserDownloadHistory(),
+				),
+			);
 			setIsApiReachable(false);
 			const message =
 				error instanceof Error ? error.message : t("errors.networkError");
@@ -155,7 +185,7 @@ export const DownloadPage = () => {
 	}, [isApiReachable, refreshData]);
 
 	const historyRecords = useMemo(
-		() => allRecords.filter((record) => record.entryType === "history"),
+		() => allRecords.filter((record) => record.entryType !== "active"),
 		[allRecords],
 	);
 
@@ -164,13 +194,17 @@ export const DownloadPage = () => {
 			(acc, item) => {
 				acc.total += 1;
 				if (
-					(item.entryType === "active" && item.status === "downloading") ||
-					item.status === "processing" ||
-					item.status === "pending"
+					item.entryType === "active" &&
+					(item.status === "downloading" ||
+						item.status === "processing" ||
+						item.status === "pending")
 				) {
 					acc.active += 1;
 				}
-				if (item.status === "completed") {
+				if (
+					item.status === "completed" ||
+					(item.entryType === "browser" && item.status === "handed-off")
+				) {
 					acc.completed += 1;
 				}
 				if (item.status === "error") {
@@ -189,11 +223,16 @@ export const DownloadPage = () => {
 					return true;
 				case "active":
 					return (
-						record.status === "downloading" ||
-						record.status === "processing" ||
-						record.status === "pending"
+						record.entryType === "active" &&
+						(record.status === "downloading" ||
+							record.status === "processing" ||
+							record.status === "pending")
 					);
 				case "completed":
+					return (
+						record.status === "completed" ||
+						(record.entryType === "browser" && record.status === "handed-off")
+					);
 				case "error":
 					return record.status === statusFilter;
 				default:
@@ -205,7 +244,7 @@ export const DownloadPage = () => {
 	const visibleHistoryIds = useMemo(
 		() =>
 			filteredRecords
-				.filter((record) => record.entryType === "history")
+				.filter((record) => record.entryType !== "active")
 				.map((record) => record.id),
 		[filteredRecords],
 	);
@@ -228,7 +267,7 @@ export const DownloadPage = () => {
 		const ids = new Set(visibleHistoryIds);
 		const playlistIds = new Set(
 			filteredRecords
-				.filter((record) => record.entryType === "history" && record.playlistId)
+				.filter((record) => record.entryType !== "active" && record.playlistId)
 				.map((record) => record.playlistId as string),
 		);
 		if (playlistIds.size === 0) {
@@ -353,6 +392,17 @@ export const DownloadPage = () => {
 		}
 	}, [confirmAction, t]);
 
+	const confirmSelectedServerCount = useMemo(() => {
+		if (confirmAction?.type !== "delete-selected") {
+			return 0;
+		}
+		const selectedIdSet = new Set(confirmAction.ids);
+		return allRecords.filter(
+			(record) =>
+				record.entryType === "history" && selectedIdSet.has(record.id),
+		).length;
+	}, [allRecords, confirmAction]);
+
 	const handleConfirmAction = async () => {
 		if (!confirmAction) {
 			return;
@@ -360,12 +410,25 @@ export const DownloadPage = () => {
 		setConfirmBusy(true);
 		try {
 			if (confirmAction.type === "delete-selected") {
+				const selectedIdSet = new Set(confirmAction.ids);
+				const browserIds = allRecords
+					.filter(
+						(record) =>
+							record.entryType === "browser" && selectedIdSet.has(record.id),
+					)
+					.map((record) => record.id);
+				const serverIds = allRecords
+					.filter(
+						(record) =>
+							record.entryType === "history" && selectedIdSet.has(record.id),
+					)
+					.map((record) => record.id);
 				const selectedHistoryRecords = allRecords.filter(
 					(record) =>
-						confirmAction.ids.includes(record.id) && record.entryType === "history",
+						serverIds.includes(record.id) && record.entryType === "history",
 				);
 
-				if (alsoDeleteFiles) {
+				if (alsoDeleteFiles && selectedHistoryRecords.length > 0) {
 					const fallbackPath = readWebSettings().downloadPath.trim();
 					const candidatePaths = new Set<string>();
 
@@ -393,14 +456,35 @@ export const DownloadPage = () => {
 					);
 				}
 
-				const result = await orpcClient.history.removeItems({
-					ids: confirmAction.ids,
-				});
-				pruneSelectedIds(confirmAction.ids);
+				let serverRemoved = 0;
+				if (serverIds.length > 0) {
+					const result = await orpcClient.history.removeItems({
+						ids: serverIds,
+					});
+					serverRemoved = result.removed;
+				}
+
+				const browserRemoval = removeBrowserDownloadRecords(browserIds);
+				const successfullyRemovedIds = [
+					...serverIds,
+					...(browserRemoval.success ? browserIds : []),
+				];
+				pruneSelectedIds(successfullyRemovedIds);
 				await refreshData();
-				toast.success(
-					t("notifications.itemsRemoved", { count: result.removed }),
-				);
+				const removedCount =
+					serverRemoved +
+					(browserRemoval.success ? browserRemoval.removedIds.length : 0);
+				if (removedCount > 0) {
+					toast.success(
+						t("notifications.itemsRemoved", { count: removedCount }),
+					);
+				}
+				if (!browserRemoval.success) {
+					toast.error(t("notifications.itemsRemoveFailed"));
+					if (serverIds.length === 0) {
+						return;
+					}
+				}
 			}
 			if (confirmAction.type === "delete-playlist") {
 				const result = await orpcClient.history.removeByPlaylist({
@@ -531,6 +615,9 @@ export const DownloadPage = () => {
 	};
 
 	const handleRetryDownload = async (download: DownloadRecord) => {
+		if (download.entryType === "browser") {
+			return;
+		}
 		if (!download.url) {
 			toast.error(t("errors.emptyUrl"));
 			return;
@@ -565,6 +652,20 @@ export const DownloadPage = () => {
 	};
 
 	const handleRemoveHistoryRecord = async (id: string) => {
+		const record = allRecords.find((item) => item.id === id);
+		if (record?.entryType === "browser") {
+			const result = removeBrowserDownloadRecords([id]);
+			if (!result.success) {
+				toast.error(t("notifications.removeFailed"));
+				return;
+			}
+			pruneSelectedIds([id]);
+			await refreshData();
+			if (result.removedIds.length > 0) {
+				toast.success(t("notifications.itemRemoved"));
+			}
+			return;
+		}
 		try {
 			await orpcClient.history.removeItems({ ids: [id] });
 			pruneSelectedIds([id]);
@@ -706,23 +807,24 @@ export const DownloadPage = () => {
 									{confirmContent.description}
 								</DialogDescription>
 							</DialogHeader>
-							{confirmAction?.type === "delete-selected" && (
-								<div className="flex items-center space-x-2">
-									<Checkbox
-										checked={alsoDeleteFiles}
-										id={alsoDeleteFilesId}
-										onCheckedChange={(checked) =>
-											setAlsoDeleteFiles(checked === true)
-										}
-									/>
-									<label
-										className="cursor-pointer font-medium text-sm leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-										htmlFor={alsoDeleteFilesId}
-									>
-										<Trans i18nKey="history.alsoDeleteFiles" />
-									</label>
-								</div>
-							)}
+							{confirmAction?.type === "delete-selected" &&
+								confirmSelectedServerCount > 0 && (
+									<div className="flex items-center space-x-2">
+										<Checkbox
+											checked={alsoDeleteFiles}
+											id={alsoDeleteFilesId}
+											onCheckedChange={(checked) =>
+												setAlsoDeleteFiles(checked === true)
+											}
+										/>
+										<label
+											className="cursor-pointer font-medium text-sm leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+											htmlFor={alsoDeleteFilesId}
+										>
+											<Trans i18nKey="history.alsoDeleteFiles" />
+										</label>
+									</div>
+								)}
 							<DialogFooter>
 								<Button
 									disabled={confirmBusy}

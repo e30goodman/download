@@ -1,8 +1,6 @@
-import { lookup } from 'node:dns/promises'
 import { createReadStream } from 'node:fs'
 import { rm, stat } from 'node:fs/promises'
 import type { ServerResponse } from 'node:http'
-import net from 'node:net'
 import path from 'node:path'
 import cors from '@fastify/cors'
 import rateLimit from '@fastify/rate-limit'
@@ -19,6 +17,7 @@ import {
   parsePublicSessionId,
   taskBelongsToPublicSession
 } from './lib/public-site'
+import { assertRemoteHttpUrl, RemoteUrlPolicyError } from './lib/remote-url-policy'
 import { rpcRouter } from './lib/rpc-router'
 import { SseHub } from './lib/sse'
 import { startApiSubscriptions, stopApiSubscriptions } from './lib/subscriptions-host'
@@ -30,94 +29,6 @@ const PUBLIC_SITE_ORIGIN =
   process.env.VIDBEE_PUBLIC_SITE_ORIGIN?.trim() || 'https://e30goodman.github.io'
 const PUBLIC_FILE_RETENTION_MS = 6 * 60 * 60 * 1000
 const PUBLIC_CLEANUP_INTERVAL_MS = 15 * 60 * 1000
-
-const isPrivateIpv4 = (ip: string): boolean => {
-  const octets = ip.split('.').map((value) => Number.parseInt(value, 10))
-  if (octets.length !== 4 || octets.some((value) => Number.isNaN(value))) {
-    return false
-  }
-
-  const [a, b] = octets
-  if (a === 10) {
-    return true
-  }
-  if (a === 127) {
-    return true
-  }
-  if (a === 169 && b === 254) {
-    return true
-  }
-  if (a === 172 && b >= 16 && b <= 31) {
-    return true
-  }
-  if (a === 192 && b === 168) {
-    return true
-  }
-  return false
-}
-
-const isPrivateIpv6 = (ip: string): boolean => {
-  const normalized = ip.toLowerCase()
-  if (normalized === '::1') {
-    return true
-  }
-  if (normalized.startsWith('fc') || normalized.startsWith('fd')) {
-    return true
-  }
-  if (normalized.startsWith('fe80:')) {
-    return true
-  }
-  return false
-}
-
-const isBlockedHost = async (url: URL): Promise<boolean> => {
-  const hostname = url.hostname.trim().toLowerCase()
-  if (!hostname) {
-    return true
-  }
-
-  if (hostname === 'localhost' || hostname.endsWith('.localhost') || hostname === '0.0.0.0') {
-    return true
-  }
-
-  if (net.isIP(hostname) === 4) {
-    return isPrivateIpv4(hostname)
-  }
-  if (net.isIP(hostname) === 6) {
-    return isPrivateIpv6(hostname)
-  }
-
-  try {
-    const records = await lookup(hostname, { all: true, verbatim: true })
-    if (records.length === 0) {
-      return true
-    }
-    for (const record of records) {
-      if (record.family === 4 && isPrivateIpv4(record.address)) {
-        return true
-      }
-      if (record.family === 6 && isPrivateIpv6(record.address)) {
-        return true
-      }
-    }
-    return false
-  } catch {
-    return true
-  }
-}
-
-const parseRemoteImageUrl = (value: string): URL | null => {
-  try {
-    const parsed = new URL(value)
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      return null
-    }
-
-    return parsed
-  } catch {
-    return null
-  }
-}
 
 const isPathWithinDownloadDirectory = (targetPath: string): boolean => {
   const normalizedBase = path.resolve(downloadDir)
@@ -145,10 +56,7 @@ export const createApiServer = async () => {
       global: true,
       max: 120,
       timeWindow: '1 minute',
-      keyGenerator: (request) => {
-        const sessionId = parsePublicSessionId(request.headers['x-vidbee-session'])
-        return sessionId || request.ip
-      }
+      keyGenerator: (request) => request.ip
     })
   }
 
@@ -254,8 +162,10 @@ export const createApiServer = async () => {
       return reply.code(400).send({ message: 'Missing url query parameter.' })
     }
 
-    const parsedUrl = parseRemoteImageUrl(sourceUrl)
-    if (!parsedUrl) {
+    let parsedUrl: URL
+    try {
+      parsedUrl = await assertRemoteHttpUrl(sourceUrl, { mode: 'public' })
+    } catch {
       return reply.code(400).send({ message: 'Invalid remote image URL.' })
     }
 
@@ -263,16 +173,16 @@ export const createApiServer = async () => {
     let currentUrl = parsedUrl
 
     for (let redirectCount = 0; redirectCount <= MAX_PROXY_REDIRECTS; redirectCount++) {
-      if (await isBlockedHost(currentUrl)) {
-        return reply.code(400).send({ message: 'Remote host is not allowed.' })
-      }
-
       try {
+        currentUrl = await assertRemoteHttpUrl(currentUrl, { mode: 'public' })
         response = await fetch(currentUrl.toString(), {
           signal: AbortSignal.timeout(15_000),
           redirect: 'manual'
         })
-      } catch {
+      } catch (error) {
+        if (error instanceof RemoteUrlPolicyError) {
+          return reply.code(400).send({ message: 'Remote host is not allowed.' })
+        }
         return reply.code(502).send({ message: 'Failed to fetch remote image.' })
       }
 
@@ -285,8 +195,19 @@ export const createApiServer = async () => {
       if (!isRedirect) {
         break
       }
+      if (redirectCount === MAX_PROXY_REDIRECTS) {
+        response.body?.cancel()
+        return reply.code(502).send({ message: 'Remote image redirected too many times.' })
+      }
 
-      currentUrl = new URL(locationHeader, currentUrl)
+      try {
+        currentUrl = await assertRemoteHttpUrl(new URL(locationHeader, currentUrl), {
+          mode: 'public'
+        })
+      } catch {
+        response.body?.cancel()
+        return reply.code(400).send({ message: 'Remote host is not allowed.' })
+      }
       response.body?.cancel()
     }
 

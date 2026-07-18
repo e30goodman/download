@@ -8,7 +8,8 @@
     "migrate-history": "tsx scripts/migrate-history.ts",
     "before-start": "node scripts/ensure-node-sqlite.mjs && tsx scripts/migrate-history.ts && tsx src/index.ts",
     "typecheck": "tsc --noEmit",
-    "check": "ultracite check && pnpm run typecheck"
+    "check": "ultracite check && pnpm run typecheck",
+    "test": "vitest run"
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",
@@ -30,6 +31,7 @@
     "drizzle-kit": "0.31.7",
     "tsx": "^4.21.0",
     "typescript": "^5.9.2",
-    "ultracite": "7.1.5"
+    "ultracite": "7.1.5",
+    "vitest": "^3.2.6"
   }
 }

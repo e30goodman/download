@@ -45,6 +45,7 @@ import {
 	FolderOpen,
 	Loader2,
 	RotateCw,
+	Send,
 	Trash2,
 	X,
 } from "lucide-react";
@@ -188,6 +189,8 @@ const getStatusText = (
 			return t("download.downloadPending");
 		case "cancelled":
 			return t("download.cancelled");
+		case "handed-off":
+			return t("download.handedOff");
 		default:
 			return "";
 	}
@@ -206,6 +209,8 @@ const getStatusIcon = (status: DownloadRecord["status"]) => {
 			return <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />;
 		case "cancelled":
 			return <X className="h-4 w-4 text-muted-foreground" />;
+		case "handed-off":
+			return <Send className="h-4 w-4 text-sky-500" />;
 		default:
 			return null;
 	}
@@ -238,9 +243,12 @@ export function DownloadItem({
 	onCopyUrl,
 }: DownloadItemProps) {
 	const { t } = useTranslation();
-	const isHistory = download.entryType === "history";
+	const isBrowserHandoff = download.entryType === "browser";
+	const isHistory = download.entryType !== "active";
 	const timestamp =
-		download.completedAt ?? download.startedAt ?? download.createdAt;
+		(isBrowserHandoff ? download.handedOffAt : download.completedAt) ??
+		download.startedAt ??
+		download.createdAt;
 	const qualityLabel = getQualityLabel(download);
 	const statusIcon = getStatusIcon(download.status);
 	const statusText = getStatusText(download.status, t);
@@ -325,6 +333,11 @@ export function DownloadItem({
 		let isMounted = true;
 
 		const checkFileExists = async () => {
+			if (isBrowserHandoff) {
+				setFileExists(false);
+				setResolvedFilePath(null);
+				return;
+			}
 			if (siteConfig.isPublicSite) {
 				setFileExists(download.status === "completed");
 				setResolvedFilePath(null);
@@ -377,6 +390,7 @@ export function DownloadItem({
 		download.title,
 		download.downloadPath,
 		download.savedFileName,
+		isBrowserHandoff,
 		resolvedExtension,
 	]);
 
@@ -504,18 +518,25 @@ export function DownloadItem({
 
 	const isInProgressStatus = isActiveStatus(download.status);
 	const isCompletedStatus = download.status === "completed";
-	const canRetry = download.status === "error";
+	const canRetry = !isBrowserHandoff && download.status === "error";
 	const showCopyAction =
-		!siteConfig.isPublicSite && isCompletedStatus && fileExists;
-	const showOpenFolderAction = Boolean(
+		!isBrowserHandoff &&
 		!siteConfig.isPublicSite &&
+		isCompletedStatus &&
+		fileExists;
+	const showOpenFolderAction = Boolean(
+		!isBrowserHandoff &&
+			!siteConfig.isPublicSite &&
 			download.title &&
 			getEffectiveDownloadPath().trim(),
 	);
 	const canCopyLink = Boolean(download.url);
-	const canOpenFile = isCompletedStatus && fileExists;
+	const canOpenFile = !isBrowserHandoff && isCompletedStatus && fileExists;
 	const canDeleteFile =
-		!siteConfig.isPublicSite && isCompletedStatus && fileExists;
+		!isBrowserHandoff &&
+		!siteConfig.isPublicSite &&
+		isCompletedStatus &&
+		fileExists;
 	const canDeleteRecord = Boolean(onRemove);
 	const isSelectedHistory = isHistory && Boolean(onToggleSelect) && isSelected;
 
@@ -596,7 +617,9 @@ export function DownloadItem({
 	);
 	if (normalizedSavedFileName || download.savedFileName) {
 		metadataDetails.push({
-			label: t("download.metadata.savedFile"),
+			label: isBrowserHandoff
+				? t("download.metadata.browserFilename")
+				: t("download.metadata.savedFile"),
 			value: normalizedSavedFileName ?? download.savedFileName ?? "",
 		});
 	}
@@ -645,7 +668,7 @@ export function DownloadItem({
 			),
 		});
 	}
-	if (download.downloadPath) {
+	if (!isBrowserHandoff && download.downloadPath) {
 		metadataDetails.push({
 			label: t("download.metadata.downloadPath"),
 			value: (
@@ -855,6 +878,15 @@ export function DownloadItem({
 												{t("download.audio")}
 											</Badge>
 										)}
+										{isBrowserHandoff && (
+											<Badge
+												className="shrink-0 gap-1 px-1.5 py-0.5 text-[10px]"
+												variant="outline"
+											>
+												<Send className="h-3 w-3 text-sky-500" />
+												{t("download.handedOff")}
+											</Badge>
+										)}
 									</div>
 									<div className="flex w-full flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
 										{statusIcon && (
@@ -917,19 +949,21 @@ export function DownloadItem({
 									</div>
 								</div>
 								<div className="relative z-20 flex shrink-0 flex-wrap items-center justify-end gap-1 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
-									{siteConfig.isPublicSite && isCompletedStatus && (
-										<Button
-											className="gap-2 rounded-full"
-											onClick={(event) => {
-												event.stopPropagation();
-												void handleOpenFile();
-											}}
-											size="sm"
-										>
-											<Download className="h-4 w-4" />
-											{t("menu.download")}
-										</Button>
-									)}
+									{siteConfig.isPublicSite &&
+										isCompletedStatus &&
+										!isBrowserHandoff && (
+											<Button
+												className="gap-2 rounded-full"
+												onClick={(event) => {
+													event.stopPropagation();
+													void handleOpenFile();
+												}}
+												size="sm"
+											>
+												<Download className="h-4 w-4" />
+												{t("menu.download")}
+											</Button>
+										)}
 									{canRetry && (
 										<Button
 											className="h-8 w-8 shrink-0 rounded-full"
@@ -1066,7 +1100,7 @@ export function DownloadItem({
 												>
 													{t("download.detailsTab")}
 												</TabsTrigger>
-												<TabsTrigger value="logs">
+												<TabsTrigger disabled={isBrowserHandoff} value="logs">
 													{t("download.logsTab")}
 												</TabsTrigger>
 											</TabsList>
@@ -1138,7 +1172,31 @@ export function DownloadItem({
 			</ContextMenuTrigger>
 
 			<ContextMenuContent>
-				{isInProgressStatus ? (
+				{isBrowserHandoff ? (
+					<>
+						<ContextMenuItem
+							disabled={!canCopyLink}
+							onClick={() => void handleCopyLink()}
+						>
+							<span aria-hidden="true" className="h-4 w-4 shrink-0" />
+							{t("history.copyUrl")}
+						</ContextMenuItem>
+						{canShowSheet && (
+							<ContextMenuItem onClick={() => setSheetOpen(true)}>
+								<span aria-hidden="true" className="h-4 w-4 shrink-0" />
+								{t("download.showDetails")}
+							</ContextMenuItem>
+						)}
+						<ContextMenuSeparator />
+						<ContextMenuItem
+							disabled={!canDeleteRecord}
+							onClick={handleDeleteRecord}
+						>
+							<Trash2 className="h-4 w-4" />
+							{t("history.deleteRecord")}
+						</ContextMenuItem>
+					</>
+				) : isInProgressStatus ? (
 					<>
 						{canRetry && (
 							<ContextMenuItem onClick={handleRetryDownload}>

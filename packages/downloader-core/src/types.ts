@@ -140,6 +140,40 @@ export interface CreateDownloadInput {
   settings?: DownloadRuntimeSettings
 }
 
+export type DeliveryServerReason =
+  | 'processing-required'
+  | 'format-unavailable'
+  | 'unsupported-format'
+  | 'authentication-required'
+  | 'unsafe-source'
+  | 'resolution-failed'
+
+export interface ResolveDeliveryInput {
+  url: string
+  formatId: string
+  type: DownloadType
+  audioFormat?: string
+  audioFormatIds?: string[]
+  startTime?: string
+  endTime?: string
+  containerFormat?: OneClickContainerOption
+  settings?: DownloadRuntimeSettings
+}
+
+export type ResolveDeliveryOutput =
+  | {
+      mode: 'direct'
+      url: string
+      filename: string
+      mime?: string
+      contentLength?: number
+      expiresAt?: string
+    }
+  | {
+      mode: 'server'
+      reason: DeliveryServerReason
+    }
+
 export interface VideoFormat {
   formatId: string
   ext: string

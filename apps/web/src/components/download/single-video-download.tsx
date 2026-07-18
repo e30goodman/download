@@ -1,4 +1,8 @@
-import type { VideoFormat, VideoInfo } from "@vidbee/downloader-core";
+import type {
+	DownloadRuntimeSettings,
+	VideoFormat,
+	VideoInfo,
+} from "@vidbee/downloader-core";
 import { Button } from "@vidbee/ui/components/ui/button";
 import {
 	DOWNLOAD_FEEDBACK_ISSUE_TITLE,
@@ -23,8 +27,10 @@ import { cn } from "@vidbee/ui/lib/cn";
 import { AlertCircle, ExternalLink, Loader2, Settings2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { isDirectDownloadEligible } from "../../lib/direct-download";
 import type { OneClickQualityPreset } from "../../lib/download-format-preferences";
 import { resolveImageProxyUrl } from "../../lib/remote-image-proxy";
+import { siteConfig } from "../../lib/site-config";
 
 export interface SingleVideoState {
 	title: string;
@@ -42,6 +48,7 @@ interface SingleVideoDownloadProps {
 	videoInfo: VideoInfo | null;
 	state: SingleVideoState;
 	oneClickQuality: OneClickQualityPreset;
+	runtimeSettings: DownloadRuntimeSettings;
 	feedbackSourceUrl?: string | null;
 	onStateChange: (state: Partial<SingleVideoState>) => void;
 }
@@ -114,6 +121,7 @@ interface FormatListProps {
 	selectedFormat: string;
 	onFormatChange: (formatId: string) => void;
 	oneClickQuality: OneClickQualityPreset;
+	runtimeSettings: DownloadRuntimeSettings;
 }
 
 const FormatList = ({
@@ -123,6 +131,7 @@ const FormatList = ({
 	selectedFormat,
 	onFormatChange,
 	oneClickQuality,
+	runtimeSettings,
 }: FormatListProps) => {
 	const { t } = useTranslation();
 	const [videoFormats, setVideoFormats] = useState<VideoFormat[]>([]);
@@ -411,6 +420,12 @@ const FormatList = ({
 				const sizeLabel = formatSize(format.filesize || format.filesizeApprox);
 				const metaLabel = formatMetaLabel(format);
 				const isSelected = selectedFormat === format.formatId;
+				const directEligible = isDirectDownloadEligible({
+					format,
+					isPublicSite: siteConfig.isPublicSite,
+					settings: runtimeSettings,
+					type,
+				});
 
 				return (
 					<label
@@ -447,6 +462,20 @@ const FormatList = ({
 											{thirdColumnLabel}
 										</span>
 									)}
+									{siteConfig.isPublicSite && (
+										<span
+											className={cn(
+												"shrink-0 rounded px-1.5 py-0.5 font-medium text-[10px]",
+												directEligible
+													? "bg-primary/10 text-primary"
+													: "bg-muted text-muted-foreground",
+											)}
+										>
+											{directEligible
+												? t("download.deliveryDirect")
+												: t("download.deliveryServerRequired")}
+										</span>
+									)}
 								</div>
 								{metaLabel && (
 									<div className="mt-0.5 break-words text-[10px] text-muted-foreground/70 leading-snug">
@@ -472,6 +501,7 @@ export function SingleVideoDownload({
 	videoInfo,
 	state,
 	oneClickQuality,
+	runtimeSettings,
 	feedbackSourceUrl,
 	onStateChange,
 }: SingleVideoDownloadProps) {
@@ -889,6 +919,7 @@ export function SingleVideoDownload({
 									)
 								}
 								oneClickQuality={oneClickQuality}
+								runtimeSettings={runtimeSettings}
 								selectedFormat={
 									activeTab === "video"
 										? state.selectedVideoFormat

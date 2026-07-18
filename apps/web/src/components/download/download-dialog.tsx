@@ -1,4 +1,5 @@
 import type {
+	CreateDownloadInput,
 	PlaylistInfo,
 	VideoFormat,
 	VideoInfo,
@@ -17,11 +18,20 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { useWebDownloadSettings } from "../../hooks/use-web-download-settings";
 import {
+	deliverDirectOrQueue,
+	isDirectDownloadEligible,
+} from "../../lib/direct-download";
+import {
+	addBrowserDownloadRecord,
+	createBrowserHandedOffRecord,
+} from "../../lib/direct-download-history";
+import {
 	buildAudioFormatPreference,
 	buildVideoFormatPreference,
 } from "../../lib/download-format-preferences";
 import { orpcClient } from "../../lib/orpc-client";
 import { readOrpcDownloadSettings } from "../../lib/orpc-download-settings";
+import { siteConfig } from "../../lib/site-config";
 import { PlaylistDownload } from "./playlist-download";
 import {
 	SingleVideoDownload,
@@ -81,6 +91,7 @@ export function DownloadDialog({ onDownloadsChanged }: DownloadDialogProps) {
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const { settings, updateSettings } = useWebDownloadSettings();
+	const runtimeDownloadSettings = readOrpcDownloadSettings();
 
 	const [url, setUrl] = useState("");
 	const [activeTab, setActiveTab] = useState<"single" | "playlist">("single");
@@ -505,15 +516,12 @@ export function DownloadDialog({ onDownloadsChanged }: DownloadDialogProps) {
 			return;
 		}
 
-		const selectedVideoFormat =
-			type === "video"
-				? (videoInfo.formats || []).find(
-						(format) => format.formatId === selectedFormat,
-					)
-				: undefined;
+		const selectedFormatMetadata = (videoInfo.formats || []).find(
+			(format) => format.formatId === selectedFormat,
+		);
 		const resolvedFormat =
 			type === "video"
-				? buildSingleVideoFormatSelector(selectedFormat, selectedVideoFormat)
+				? buildSingleVideoFormatSelector(selectedFormat, selectedFormatMetadata)
 				: selectedFormat;
 
 		const targetUrl = videoInfo.webpageUrl || url.trim();
@@ -523,7 +531,7 @@ export function DownloadDialog({ onDownloadsChanged }: DownloadDialogProps) {
 		}
 
 		try {
-			await orpcClient.downloads.create({
+			const fallbackInput: CreateDownloadInput = {
 				url: targetUrl,
 				type,
 				title: singleVideoState.title || videoInfo.title,
@@ -533,19 +541,70 @@ export function DownloadDialog({ onDownloadsChanged }: DownloadDialogProps) {
 				uploader: videoInfo.uploader,
 				viewCount: videoInfo.viewCount,
 				tags: videoInfo.tags,
-				selectedFormat: selectedVideoFormat,
+				selectedFormat: selectedFormatMetadata,
 				format: resolvedFormat || undefined,
 				audioFormat: type === "audio" ? "mp3" : undefined,
-				settings: readOrpcDownloadSettings(),
-			});
+				settings: runtimeDownloadSettings,
+			};
 
-			await notifyDownloadsChanged();
+			const canAttemptDirect = isDirectDownloadEligible({
+				format: selectedFormatMetadata,
+				isPublicSite: siteConfig.isPublicSite,
+				settings: runtimeDownloadSettings,
+				type,
+			});
+			let deliveryOutcome: "handed-off" | "queued";
+			let browserFilename: string | undefined;
+			if (canAttemptDirect) {
+				const result = await deliverDirectOrQueue({
+					fallback: fallbackInput,
+					resolve: {
+						formatId: selectedFormat,
+						settings: runtimeDownloadSettings,
+						type,
+						url: targetUrl,
+					},
+				});
+				deliveryOutcome = result.outcome;
+				browserFilename =
+					result.outcome === "handed-off"
+						? result.metadata.filename
+						: undefined;
+			} else {
+				await orpcClient.downloads.create(fallbackInput);
+				deliveryOutcome = "queued";
+			}
+
+			if (deliveryOutcome === "handed-off") {
+				addBrowserDownloadRecord(
+					createBrowserHandedOffRecord({
+						filename: browserFilename ?? "download",
+						selectedFormat: selectedFormatMetadata,
+						thumbnail: videoInfo.thumbnail,
+						title: singleVideoState.title || videoInfo.title,
+						type,
+						url: targetUrl,
+					}),
+				);
+				toast.success(t("download.handedToBrowser"));
+				await notifyDownloadsChanged();
+			} else {
+				toast.success(t("download.addedToQueue"));
+				await notifyDownloadsChanged();
+			}
 			setOpen(false);
 		} catch (startError) {
 			console.error("Failed to start download:", startError);
 			toast.error(t("notifications.downloadFailed"));
 		}
-	}, [notifyDownloadsChanged, singleVideoState, t, url, videoInfo]);
+	}, [
+		notifyDownloadsChanged,
+		runtimeDownloadSettings,
+		singleVideoState,
+		t,
+		url,
+		videoInfo,
+	]);
 
 	useEffect(() => {
 		if (!open) {
@@ -767,6 +826,7 @@ export function DownloadDialog({ onDownloadsChanged }: DownloadDialogProps) {
 					loading={loading}
 					onStateChange={handleSingleVideoStateChange}
 					oneClickQuality={settings.oneClickQuality}
+					runtimeSettings={runtimeDownloadSettings}
 					state={singleVideoState}
 					videoInfo={videoInfo}
 				/>

@@ -101,21 +101,9 @@ export const DownloadRuntimeSettingsSchema = z.object({
   embedChapters: z.boolean().optional()
 })
 
-export const OneClickQualityPresetSchema = z.enum([
-  'best',
-  'good',
-  'normal',
-  'bad',
-  'worst'
-])
+export const OneClickQualityPresetSchema = z.enum(['best', 'good', 'normal', 'bad', 'worst'])
 
-export const OneClickContainerOptionSchema = z.enum([
-  'auto',
-  'mp4',
-  'mkv',
-  'webm',
-  'original'
-])
+export const OneClickContainerOptionSchema = z.enum(['auto', 'mp4', 'mkv', 'webm', 'original'])
 
 export const ThemeValueSchema = z.enum(['light', 'dark', 'system'])
 
@@ -170,6 +158,48 @@ export const CreateDownloadInputSchema = z.object({
   containerFormat: OneClickContainerOptionSchema.optional(),
   settings: DownloadRuntimeSettingsSchema.optional()
 })
+
+export const DeliveryServerReasonSchema = z.enum([
+  'processing-required',
+  'format-unavailable',
+  'unsupported-format',
+  'authentication-required',
+  'unsafe-source',
+  'resolution-failed'
+])
+
+export const ResolveDeliveryInputSchema = z
+  .object({
+    url: z.url(),
+    formatId: z.string().trim().min(1),
+    type: DownloadTypeSchema,
+    audioFormat: z.string().optional(),
+    audioFormatIds: z.array(z.string()).optional(),
+    startTime: z.string().optional(),
+    endTime: z.string().optional(),
+    containerFormat: OneClickContainerOptionSchema.optional(),
+    settings: DownloadRuntimeSettingsSchema.optional()
+  })
+  .strict()
+
+export const ResolveDeliveryOutputSchema = z.discriminatedUnion('mode', [
+  z
+    .object({
+      mode: z.literal('direct'),
+      url: z.url(),
+      filename: z.string().min(1),
+      mime: z.string().optional(),
+      contentLength: z.number().int().nonnegative().optional(),
+      expiresAt: z.iso.datetime().optional()
+    })
+    .strict(),
+  z
+    .object({
+      mode: z.literal('server'),
+      reason: DeliveryServerReasonSchema
+    })
+    .strict()
+])
 
 export const VideoInfoInputSchema = z.object({
   url: z.url(),

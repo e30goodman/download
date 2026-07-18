@@ -8,16 +8,25 @@ import { implement, ORPCError } from '@orpc/server'
 import type { DownloadRuntimeSettings, DownloadTask } from '@vidbee/downloader-core'
 import { downloaderContract } from '@vidbee/downloader-core'
 import type { Task, TaskStatus } from '@vidbee/task-queue'
+import { resolveDirectDelivery } from './direct-delivery'
 import { taskQueue, taskQueueExecutor } from './downloader'
 import { projectTaskForApi } from './projection'
+import { withPublicSessionMutationLock } from './public-session-mutation-lock'
 import {
   type ApiContext,
   isPublicSiteEnabled,
   requirePublicSessionId,
   taskBelongsToPublicSession
 } from './public-site'
+import { assertRemoteHttpUrl } from './remote-url-policy'
+import {
+  fetchVideoInfoFromSource,
+  isSpotifyUrl,
+  resolveDownloadSource,
+  SpotifySourceError
+} from './spotify-source'
 import { webSettingsStore } from './web-settings-store'
-import { fetchPlaylistInfo, fetchVideoInfo } from './yt-dlp-info'
+import { fetchPlaylistInfo } from './yt-dlp-info'
 
 const os = implement(downloaderContract).$context<ApiContext>()
 const WEB_SETTINGS_FILES_DIR = path.resolve(process.cwd(), '.data', 'web-settings-files')
@@ -316,6 +325,42 @@ const ensurePublicTaskCapacity = (
   }
 }
 
+const assertAllowedUserUrl = async (url: string): Promise<void> => {
+  try {
+    await assertRemoteHttpUrl(url, {
+      mode: isPublicSiteEnabled ? 'public' : 'basic'
+    })
+  } catch {
+    throw new ORPCError('BAD_REQUEST', {
+      message: 'Only public HTTP(S) URLs are allowed.'
+    })
+  }
+}
+
+const spotifyPolicyMode = (): 'basic' | 'public' => (isPublicSiteEnabled ? 'public' : 'basic')
+
+const throwSpotifyRpcError = (error: unknown): void => {
+  if (!(error instanceof SpotifySourceError)) {
+    return
+  }
+  if (error.category === 'user') {
+    throw new ORPCError('BAD_REQUEST', { message: error.message })
+  }
+  if (error.category === 'busy') {
+    throw new ORPCError('TOO_MANY_REQUESTS', {
+      message: 'Spotify track matching service is busy. Try again shortly.'
+    })
+  }
+  if (error.category === 'service') {
+    throw new ORPCError('SERVICE_UNAVAILABLE', {
+      message: 'Spotify track matching service is temporarily unavailable.'
+    })
+  }
+  throw new ORPCError('INTERNAL_SERVER_ERROR', {
+    message: 'Failed to safely match the Spotify track.'
+  })
+}
+
 export const rpcRouter = os.router({
   status: os.status.handler(() => {
     const stats = taskQueue.stats()
@@ -330,9 +375,18 @@ export const rpcRouter = os.router({
   videoInfo: os.videoInfo.handler(async ({ context, input }) => {
     requirePublicSessionId(context)
     try {
-      const video = await fetchVideoInfo(input.url, sanitizeRuntimeSettings(input.settings))
+      await assertAllowedUserUrl(input.url)
+      const video = await fetchVideoInfoFromSource(
+        input.url,
+        sanitizeRuntimeSettings(input.settings),
+        spotifyPolicyMode()
+      )
       return { video }
     } catch (error) {
+      if (error instanceof ORPCError) {
+        throw error
+      }
+      throwSpotifyRpcError(error)
       throw new ORPCError('INTERNAL_SERVER_ERROR', {
         message: toErrorMessage(error, 'Failed to fetch video info.')
       })
@@ -343,9 +397,20 @@ export const rpcRouter = os.router({
     info: os.playlist.info.handler(async ({ context, input }) => {
       requirePublicSessionId(context)
       try {
+        await assertAllowedUserUrl(input.url)
+        if (isSpotifyUrl(input.url)) {
+          throw new SpotifySourceError(
+            'unsupported',
+            'Spotify playlists and albums are not supported; use a Spotify track link.'
+          )
+        }
         const playlist = await fetchPlaylistInfo(input.url, sanitizeRuntimeSettings(input.settings))
         return { playlist }
       } catch (error) {
+        if (error instanceof ORPCError) {
+          throw error
+        }
+        throwSpotifyRpcError(error)
         throw new ORPCError('INTERNAL_SERVER_ERROR', {
           message: toErrorMessage(error, 'Failed to fetch playlist info.')
         })
@@ -354,6 +419,13 @@ export const rpcRouter = os.router({
     download: os.playlist.download.handler(async ({ context, input }) => {
       const publicSessionId = requirePublicSessionId(context)
       try {
+        await assertAllowedUserUrl(input.url)
+        if (isSpotifyUrl(input.url)) {
+          throw new SpotifySourceError(
+            'unsupported',
+            'Spotify playlists and albums are not supported; use a Spotify track link.'
+          )
+        }
         const playlist = await fetchPlaylistInfo(input.url, sanitizeRuntimeSettings(input.settings))
         const groupId = `${PLAYLIST_GROUP_PREFIX}${Date.now()}_${randomUUID().slice(0, 8)}`
 
@@ -390,53 +462,59 @@ export const rpcRouter = os.router({
             message: `Public playlist downloads are limited to ${PUBLIC_MAX_PLAYLIST_ENTRIES} entries.`
           })
         }
-        ensurePublicTaskCapacity(publicSessionId, selected.length)
-
-        const created: Array<{
-          downloadId: string
-          entryId: string
-          title: string
-          url: string
-          index: number
-        }> = []
-
         for (const entry of selected) {
-          const result = await taskQueue.add({
-            input: {
-              url: entry.url,
-              kind: input.type === 'audio' ? 'audio' : 'video',
-              title: entry.title,
-              thumbnail: entry.thumbnail,
-              playlistId: groupId,
-              playlistIndex: entry.index,
-              options: {
-                type: input.type,
-                format: input.format,
-                audioFormat: input.audioFormat,
-                audioFormatIds: input.audioFormatIds,
-                customDownloadPath: isPublicSiteEnabled ? undefined : input.customDownloadPath,
-                customFilenameTemplate: isPublicSiteEnabled
-                  ? undefined
-                  : input.customFilenameTemplate,
-                containerFormat: input.containerFormat,
-                settings: sanitizeRuntimeSettings(input.settings),
+          await assertAllowedUserUrl(entry.url)
+        }
+
+        const created = await withPublicSessionMutationLock(publicSessionId, async () => {
+          ensurePublicTaskCapacity(publicSessionId, selected.length)
+          const entries: Array<{
+            downloadId: string
+            entryId: string
+            title: string
+            url: string
+            index: number
+          }> = []
+
+          for (const entry of selected) {
+            const result = await taskQueue.add({
+              input: {
+                url: entry.url,
+                kind: input.type === 'audio' ? 'audio' : 'video',
                 title: entry.title,
                 thumbnail: entry.thumbnail,
-                playlistTitle: playlist.title,
-                playlistSize: selected.length,
-                publicSessionId
-              }
-            },
-            groupKey: `playlist:${groupId}`
-          })
-          created.push({
-            downloadId: result.id,
-            entryId: entry.id,
-            title: entry.title,
-            url: entry.url,
-            index: entry.index
-          })
-        }
+                playlistId: groupId,
+                playlistIndex: entry.index,
+                options: {
+                  type: input.type,
+                  format: input.format,
+                  audioFormat: input.audioFormat,
+                  audioFormatIds: input.audioFormatIds,
+                  customDownloadPath: isPublicSiteEnabled ? undefined : input.customDownloadPath,
+                  customFilenameTemplate: isPublicSiteEnabled
+                    ? undefined
+                    : input.customFilenameTemplate,
+                  containerFormat: input.containerFormat,
+                  settings: sanitizeRuntimeSettings(input.settings),
+                  title: entry.title,
+                  thumbnail: entry.thumbnail,
+                  playlistTitle: playlist.title,
+                  playlistSize: selected.length,
+                  publicSessionId
+                }
+              },
+              groupKey: `playlist:${groupId}`
+            })
+            entries.push({
+              downloadId: result.id,
+              entryId: entry.id,
+              title: entry.title,
+              url: entry.url,
+              index: entry.index
+            })
+          }
+          return entries
+        })
 
         return {
           result: {
@@ -454,6 +532,7 @@ export const rpcRouter = os.router({
         if (error instanceof ORPCError) {
           throw error
         }
+        throwSpotifyRpcError(error)
         throw new ORPCError('INTERNAL_SERVER_ERROR', {
           message: toErrorMessage(error, 'Failed to start playlist download.')
         })
@@ -462,54 +541,75 @@ export const rpcRouter = os.router({
   },
 
   downloads: {
+    resolveDelivery: os.downloads.resolveDelivery.handler(async ({ context, input }) => {
+      requirePublicSessionId(context)
+      if (isSpotifyUrl(input.url)) {
+        return { mode: 'server' as const, reason: 'processing-required' as const }
+      }
+      try {
+        await assertAllowedUserUrl(input.url)
+      } catch {
+        return { mode: 'server' as const, reason: 'unsafe-source' as const }
+      }
+      if (!isPublicSiteEnabled) {
+        return { mode: 'server' as const, reason: 'processing-required' as const }
+      }
+      return resolveDirectDelivery(input)
+    }),
     create: os.downloads.create.handler(async ({ context, input }) => {
       const publicSessionId = requirePublicSessionId(context)
       try {
+        await assertAllowedUserUrl(input.url)
         ensurePublicTaskCapacity(publicSessionId, 1)
-        const result = await taskQueue.add({
-          input: {
-            url: input.url,
-            kind: input.type === 'audio' ? 'audio' : 'video',
-            title: input.title,
-            thumbnail: input.thumbnail,
-            playlistId: input.playlistId,
-            playlistIndex: input.playlistIndex,
-            options: {
-              type: input.type,
-              format: input.format,
-              audioFormat: input.audioFormat,
-              audioFormatIds: input.audioFormatIds,
-              startTime: input.startTime,
-              endTime: input.endTime,
-              customDownloadPath: isPublicSiteEnabled ? undefined : input.customDownloadPath,
-              customFilenameTemplate: isPublicSiteEnabled
-                ? undefined
-                : input.customFilenameTemplate,
-              containerFormat: input.containerFormat,
-              settings: sanitizeRuntimeSettings(input.settings),
-              title: input.title,
-              thumbnail: input.thumbnail,
-              description: input.description,
-              channel: input.channel,
-              uploader: input.uploader,
-              viewCount: input.viewCount,
-              tags: input.tags ? [...input.tags] : undefined,
-              duration: input.duration,
-              playlistTitle: input.playlistTitle,
-              playlistSize: input.playlistSize,
-              publicSessionId
+        const source = await resolveDownloadSource(input, spotifyPolicyMode())
+        return await withPublicSessionMutationLock(publicSessionId, async () => {
+          ensurePublicTaskCapacity(publicSessionId, 1)
+          const result = await taskQueue.add({
+            input: {
+              url: source.url,
+              kind: input.type === 'audio' ? 'audio' : 'video',
+              title: source.title,
+              thumbnail: source.thumbnail,
+              playlistId: input.playlistId,
+              playlistIndex: input.playlistIndex,
+              options: {
+                type: input.type,
+                format: input.format,
+                audioFormat: input.audioFormat,
+                audioFormatIds: input.audioFormatIds,
+                startTime: input.startTime,
+                endTime: input.endTime,
+                customDownloadPath: isPublicSiteEnabled ? undefined : input.customDownloadPath,
+                customFilenameTemplate: isPublicSiteEnabled
+                  ? undefined
+                  : input.customFilenameTemplate,
+                containerFormat: input.containerFormat,
+                settings: sanitizeRuntimeSettings(input.settings),
+                title: source.title,
+                thumbnail: source.thumbnail,
+                description: input.description,
+                channel: input.channel,
+                uploader: input.uploader,
+                viewCount: input.viewCount,
+                tags: input.tags ? [...input.tags] : undefined,
+                duration: source.duration,
+                playlistTitle: input.playlistTitle,
+                playlistSize: input.playlistSize,
+                publicSessionId
+              }
             }
+          })
+          const created = taskQueue.get(result.id)
+          if (!created) {
+            throw new Error('Failed to read back created task.')
           }
+          return { download: projectTask(created) }
         })
-        const created = taskQueue.get(result.id)
-        if (!created) {
-          throw new Error('Failed to read back created task.')
-        }
-        return { download: projectTask(created) }
       } catch (error) {
         if (error instanceof ORPCError) {
           throw error
         }
+        throwSpotifyRpcError(error)
         throw new ORPCError('INTERNAL_SERVER_ERROR', {
           message: toErrorMessage(error, 'Failed to create download.')
         })
