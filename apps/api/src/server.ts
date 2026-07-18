@@ -1,14 +1,24 @@
 import { lookup } from 'node:dns/promises'
+import { createReadStream } from 'node:fs'
+import { rm, stat } from 'node:fs/promises'
 import type { ServerResponse } from 'node:http'
 import net from 'node:net'
+import path from 'node:path'
 import cors from '@fastify/cors'
+import rateLimit from '@fastify/rate-limit'
 import { OpenAPIHandler } from '@orpc/openapi/fastify'
 import { OpenAPIReferencePlugin } from '@orpc/openapi/plugins'
 import { RPCHandler } from '@orpc/server/fastify'
 import { ZodToJsonSchemaConverter } from '@orpc/zod/zod4'
 import Fastify from 'fastify'
-import { startTaskQueue, stopTaskQueue, taskQueue } from './lib/downloader'
+import { downloadDir, startTaskQueue, stopTaskQueue, taskQueue } from './lib/downloader'
 import { projectTaskForApi } from './lib/projection'
+import {
+  getTaskPublicSessionId,
+  isPublicSiteEnabled,
+  parsePublicSessionId,
+  taskBelongsToPublicSession
+} from './lib/public-site'
 import { rpcRouter } from './lib/rpc-router'
 import { SseHub } from './lib/sse'
 import { startApiSubscriptions, stopApiSubscriptions } from './lib/subscriptions-host'
@@ -16,6 +26,10 @@ import { subscriptionsRouter } from './lib/subscriptions-router'
 
 const MAX_PROXY_IMAGE_BYTES = 10 * 1024 * 1024
 const MAX_PROXY_REDIRECTS = 5
+const PUBLIC_SITE_ORIGIN =
+  process.env.VIDBEE_PUBLIC_SITE_ORIGIN?.trim() || 'https://e30goodman.github.io'
+const PUBLIC_FILE_RETENTION_MS = 6 * 60 * 60 * 1000
+const PUBLIC_CLEANUP_INTERVAL_MS = 15 * 60 * 1000
 
 const isPrivateIpv4 = (ip: string): boolean => {
   const octets = ip.split('.').map((value) => Number.parseInt(value, 10))
@@ -105,6 +119,13 @@ const parseRemoteImageUrl = (value: string): URL | null => {
   }
 }
 
+const isPathWithinDownloadDirectory = (targetPath: string): boolean => {
+  const normalizedBase = path.resolve(downloadDir)
+  const normalizedTarget = path.resolve(targetPath)
+  const relativePath = path.relative(normalizedBase, normalizedTarget)
+  return relativePath !== '' && !relativePath.startsWith('..') && !path.isAbsolute(relativePath)
+}
+
 export const createApiServer = async () => {
   await startTaskQueue()
   await startApiSubscriptions()
@@ -116,9 +137,20 @@ export const createApiServer = async () => {
   })
 
   await fastify.register(cors, {
-    origin: true,
+    origin: isPublicSiteEnabled ? PUBLIC_SITE_ORIGIN : true,
     methods: ['GET', 'POST', 'OPTIONS']
   })
+  if (isPublicSiteEnabled) {
+    await fastify.register(rateLimit, {
+      global: true,
+      max: 120,
+      timeWindow: '1 minute',
+      keyGenerator: (request) => {
+        const sessionId = parsePublicSessionId(request.headers['x-vidbee-session'])
+        return sessionId || request.ip
+      }
+    })
+  }
 
   const rpcHandler = new RPCHandler(rpcRouter)
   const subscriptionsRpcHandler = new RPCHandler(subscriptionsRouter)
@@ -142,6 +174,38 @@ export const createApiServer = async () => {
   })
 
   const sseHub = new SseHub()
+  const cleanupExpiredPublicDownloads = async (): Promise<void> => {
+    const cutoff = Date.now() - PUBLIC_FILE_RETENTION_MS
+    let cursor: string | null = null
+    do {
+      const page = taskQueue.list({ limit: 200, cursor })
+      for (const task of page.tasks) {
+        const isExpiredTerminalTask =
+          ['completed', 'failed', 'cancelled'].includes(task.status) &&
+          task.updatedAt < cutoff &&
+          getTaskPublicSessionId(task) !== null
+        if (!isExpiredTerminalTask) {
+          continue
+        }
+
+        const filePath = task.output?.filePath ? path.resolve(task.output.filePath) : null
+        if (filePath && isPathWithinDownloadDirectory(filePath)) {
+          await rm(filePath, { force: true }).catch(() => undefined)
+        }
+        await taskQueue.removeFromHistory(task.id).catch(() => undefined)
+      }
+      cursor = page.nextCursor
+    } while (cursor)
+  }
+  const publicCleanupTimer = isPublicSiteEnabled
+    ? setInterval(() => {
+        void cleanupExpiredPublicDownloads()
+      }, PUBLIC_CLEANUP_INTERVAL_MS)
+    : null
+  publicCleanupTimer?.unref()
+  if (isPublicSiteEnabled) {
+    void cleanupExpiredPublicDownloads()
+  }
 
   // Bridge TaskQueue events → /events SSE. The web client speaks the legacy
   // task-updated / queue-updated payload shape; we project from internal
@@ -149,21 +213,30 @@ export const createApiServer = async () => {
   // API SSE present the same fields for the same task.
   const NON_TERMINAL = new Set(['queued', 'running', 'processing', 'paused', 'retry-scheduled'])
   const publishQueueUpdated = (): void => {
-    const downloads = taskQueue
-      .list({ limit: 200 })
-      .tasks.filter((t) => NON_TERMINAL.has(t.status))
-      .sort((a, b) => b.createdAt - a.createdAt)
-      .map(projectTaskForApi)
-    sseHub.publish('queue-updated', { downloads })
+    sseHub.publishPerClient('queue-updated', (publicSessionId) => {
+      const downloads = taskQueue
+        .list({ limit: 200 })
+        .tasks.filter(
+          (task) =>
+            NON_TERMINAL.has(task.status) && taskBelongsToPublicSession(task, publicSessionId)
+        )
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .map(projectTaskForApi)
+      return { downloads }
+    })
   }
 
   taskQueue.on('snapshot-changed', (e) => {
-    sseHub.publish('task-updated', { task: projectTaskForApi(e.task) })
+    const targetSessionId = isPublicSiteEnabled ? getTaskPublicSessionId(e.task) : undefined
+    sseHub.publish('task-updated', { task: projectTaskForApi(e.task) }, targetSessionId)
     publishQueueUpdated()
   })
   taskQueue.on('progress', (e) => {
     const t = taskQueue.get(e.taskId)
-    if (t) sseHub.publish('task-updated', { task: projectTaskForApi(t) })
+    if (t) {
+      const targetSessionId = isPublicSiteEnabled ? getTaskPublicSessionId(t) : undefined
+      sseHub.publish('task-updated', { task: projectTaskForApi(t) }, targetSessionId)
+    }
   })
   taskQueue.on('transition', (e) => {
     if (e.to === 'queued' || e.to === 'cancelled' || e.to === 'completed' || e.to === 'failed') {
@@ -285,14 +358,19 @@ export const createApiServer = async () => {
     return reply.send(imageBuffer)
   })
 
-  fastify.get('/events', async (request, reply) => {
+  fastify.get<{ Querystring: { session?: string } }>('/events', async (request, reply) => {
+    const publicSessionId = parsePublicSessionId(request.query.session)
+    if (isPublicSiteEnabled && !publicSessionId) {
+      return reply.code(401).send({ message: 'A valid public session is required.' })
+    }
+
     const requestOrigin = request.headers.origin?.trim()
     const responseHeaders: Record<string, string> = {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
       'X-Accel-Buffering': 'no',
-      'Access-Control-Allow-Origin': requestOrigin || '*'
+      'Access-Control-Allow-Origin': isPublicSiteEnabled ? PUBLIC_SITE_ORIGIN : requestOrigin || '*'
     }
 
     if (requestOrigin) {
@@ -303,11 +381,48 @@ export const createApiServer = async () => {
     reply.raw.writeHead(200, responseHeaders)
 
     const response = reply.raw as ServerResponse
-    sseHub.addClient(response)
+    sseHub.addClient(response, publicSessionId)
 
     request.raw.on('close', () => {
       sseHub.removeClient(response)
     })
+  })
+
+  fastify.get<{
+    Params: { id: string }
+    Querystring: { session?: string }
+  }>('/downloads/:id/file', async (request, reply) => {
+    const publicSessionId = parsePublicSessionId(request.query.session)
+    if (isPublicSiteEnabled && !publicSessionId) {
+      return reply.code(401).send({ message: 'A valid public session is required.' })
+    }
+
+    const task = taskQueue.get(request.params.id)
+    if (!(task && taskBelongsToPublicSession(task, publicSessionId))) {
+      return reply.code(404).send({ message: 'Download not found.' })
+    }
+    if (task.status !== 'completed' || !task.output?.filePath) {
+      return reply.code(409).send({ message: 'Download is not ready.' })
+    }
+
+    const filePath = path.resolve(task.output.filePath)
+    if (!isPathWithinDownloadDirectory(filePath)) {
+      return reply.code(403).send({ message: 'Download path is not allowed.' })
+    }
+
+    try {
+      const fileInfo = await stat(filePath)
+      if (!fileInfo.isFile()) {
+        return reply.code(404).send({ message: 'Download file was not found.' })
+      }
+      const fileName = path.basename(filePath).replace(/["\r\n]/g, '_')
+      reply.header('Content-Type', 'application/octet-stream')
+      reply.header('Content-Length', fileInfo.size.toString())
+      reply.header('Content-Disposition', `attachment; filename="${fileName}"`)
+      return reply.send(createReadStream(filePath))
+    } catch {
+      return reply.code(404).send({ message: 'Download file was not found.' })
+    }
   })
 
   // Subscriptions live behind their own oRPC handler so the contract surface
@@ -315,30 +430,46 @@ export const createApiServer = async () => {
   // generic `/rpc/*` handler because Fastify applies the most-specific route
   // wins rule for `/rpc/subscriptions/*`.
   fastify.all('/rpc/subscriptions/*', async (request, reply) => {
+    if (isPublicSiteEnabled) {
+      return reply.code(403).send({ message: 'Subscriptions are disabled on the public site.' })
+    }
     await subscriptionsRpcHandler.handle(request, reply, {
       prefix: '/rpc/subscriptions'
     })
   })
 
   fastify.all('/rpc/*', async (request, reply) => {
+    const publicSessionId = parsePublicSessionId(request.headers['x-vidbee-session'])
     await rpcHandler.handle(request, reply, {
+      context: { publicSessionId },
       prefix: '/rpc'
     })
   })
 
   fastify.all('/docs', async (request, reply) => {
+    if (isPublicSiteEnabled) {
+      return reply.code(404).send({ message: 'Not found.' })
+    }
     await openApiHandler.handle(request, reply, {
+      context: { publicSessionId: null },
       prefix: '/'
     })
   })
 
   fastify.all('/openapi.json', async (request, reply) => {
+    if (isPublicSiteEnabled) {
+      return reply.code(404).send({ message: 'Not found.' })
+    }
     await openApiHandler.handle(request, reply, {
+      context: { publicSessionId: null },
       prefix: '/'
     })
   })
 
   fastify.addHook('onClose', async () => {
+    if (publicCleanupTimer) {
+      clearInterval(publicCleanupTimer)
+    }
     sseHub.closeAll()
     await stopApiSubscriptions()
     await stopTaskQueue()

@@ -6,6 +6,7 @@ import {
 import { appSidebarIcons } from "@vidbee/ui/components/ui/app-sidebar-icons";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { siteConfig } from "../../lib/site-config";
 
 type AppPage = "about" | "download" | "settings";
 
@@ -17,10 +18,11 @@ interface AppShellProps {
 export const AppShell = ({ children, page }: AppShellProps) => {
 	const { t } = useTranslation();
 	const navigate = useNavigate();
+	const logoSrc = `${import.meta.env.BASE_URL}app-icon.svg`;
 
 	const openSupportedSites = () => {
 		window.open(
-			"https://vidbee.org/supported-sites/",
+			"https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md",
 			"_blank",
 			"noopener,noreferrer",
 		);
@@ -50,8 +52,9 @@ export const AppShell = ({ children, page }: AppShellProps) => {
 		},
 	];
 
-	const bottomItems: AppSidebarItem[] = [
-		{
+	const bottomItems: AppSidebarItem[] = [];
+	if (!siteConfig.isPublicSite) {
+		bottomItems.push({
 			id: "settings",
 			active: page === "settings",
 			icon: appSidebarIcons.settings,
@@ -61,28 +64,28 @@ export const AppShell = ({ children, page }: AppShellProps) => {
 			onClick: () => {
 				void navigate({ to: "/settings" });
 			},
+		});
+	}
+	bottomItems.push({
+		id: "about",
+		active: page === "about",
+		icon: appSidebarIcons.about,
+		label: t("menu.about"),
+		onClick: () => {
+			void navigate({ to: "/about" });
 		},
-		{
-			id: "about",
-			active: page === "about",
-			icon: appSidebarIcons.about,
-			label: t("menu.about"),
-			onClick: () => {
-				void navigate({ to: "/about" });
-			},
-			showLabel: false,
-			showTooltip: true,
-		},
-	];
+		showLabel: false,
+		showTooltip: true,
+	});
 
 	return (
 		<div className="flex h-screen flex-row">
 			<AppSidebar
-				appName="VidBee"
+				appName={siteConfig.name}
 				bottomItems={bottomItems}
 				items={items}
-				logoAlt="VidBee"
-				logoSrc="/app-icon.png"
+				logoAlt={siteConfig.name}
+				logoSrc={logoSrc}
 			/>
 
 			<main className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">

@@ -8,6 +8,8 @@ services:
       VIDBEE_API_PORT: ${VIDBEE_API_PORT:-3100}
       VIDBEE_DOWNLOAD_DIR: /data/downloads
       VIDBEE_HISTORY_STORE_PATH: /data/vidbee/vidbee.db
+      VIDBEE_PUBLIC_SITE: ${VIDBEE_PUBLIC_SITE:-false}
+      VIDBEE_PUBLIC_SITE_ORIGIN: ${VIDBEE_PUBLIC_SITE_ORIGIN:-https://e30goodman.github.io}
     ports:
       - "${VIDBEE_API_PORT:-3100}:${VIDBEE_API_PORT:-3100}"
     volumes:

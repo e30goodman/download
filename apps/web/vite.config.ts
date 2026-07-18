@@ -7,6 +7,17 @@ import { defineConfig } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
 import packageJson from "./package.json";
 
+const normalizeBasePath = (value: string | undefined): string => {
+	const trimmedValue = value?.trim();
+	if (!trimmedValue || trimmedValue === "/") {
+		return "/";
+	}
+
+	return `/${trimmedValue.replace(/^\/+|\/+$/g, "")}/`;
+};
+
+const basePath = normalizeBasePath(process.env.VITE_BASE_PATH);
+
 // Self-hosters behind a reverse proxy (e.g. Traefik) must allow their domain
 // in Vite's host check (GitHub issue #404). VIDBEE_ALLOWED_HOSTS="*" (or "all")
 // disables the check; a comma-separated list allows specific hosts; unset keeps
@@ -26,6 +37,7 @@ function resolveAllowedHosts(): true | string[] | undefined {
 }
 
 const config = defineConfig({
+	base: basePath,
 	define: {
 		__APP_VERSION__: JSON.stringify(packageJson.version),
 	},
@@ -41,7 +53,11 @@ const config = defineConfig({
 			jsx: "react",
 		}),
 		tailwindcss(),
-		tanstackStart(),
+		tanstackStart({
+			spa: {
+				enabled: true,
+			},
+		}),
 		viteReact(),
 	],
 	server: {

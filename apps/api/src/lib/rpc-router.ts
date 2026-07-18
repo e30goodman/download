@@ -5,21 +5,28 @@ import { access, mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 import { implement, ORPCError } from '@orpc/server'
+import type { DownloadRuntimeSettings, DownloadTask } from '@vidbee/downloader-core'
 import { downloaderContract } from '@vidbee/downloader-core'
-import type { DownloadTask } from '@vidbee/downloader-core'
 import type { Task, TaskStatus } from '@vidbee/task-queue'
-
-import { projectTaskForApi } from './projection'
 import { taskQueue, taskQueueExecutor } from './downloader'
+import { projectTaskForApi } from './projection'
+import {
+  type ApiContext,
+  isPublicSiteEnabled,
+  requirePublicSessionId,
+  taskBelongsToPublicSession
+} from './public-site'
 import { webSettingsStore } from './web-settings-store'
 import { fetchPlaylistInfo, fetchVideoInfo } from './yt-dlp-info'
 
-const os = implement(downloaderContract)
+const os = implement(downloaderContract).$context<ApiContext>()
 const WEB_SETTINGS_FILES_DIR = path.resolve(process.cwd(), '.data', 'web-settings-files')
 const MAX_WEB_SETTINGS_FILE_BYTES = 1_000_000
 const MANAGED_SETTINGS_FILE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
 const SAFE_FILE_NAME_REGEX = /[^A-Za-z0-9._-]+/g
 type ManagedSettingsFileKind = 'cookies' | 'config'
+const PUBLIC_MAX_ACTIVE_TASKS = 3
+const PUBLIC_MAX_PLAYLIST_ENTRIES = 10
 
 const TERMINAL_TASK_STATUSES = new Set<TaskStatus>(['completed', 'failed', 'cancelled'])
 const NON_TERMINAL_TASK_STATUSES = new Set<TaskStatus>([
@@ -64,14 +71,22 @@ const isPathWithinBase = (basePath: string, targetPath: string): boolean => {
 }
 
 const openFileWithSystem = async (targetPath: string): Promise<boolean> => {
-  if (process.platform === 'darwin') return runProcess('open', [targetPath])
-  if (process.platform === 'win32') return runProcess('cmd', ['/c', 'start', '', targetPath])
+  if (process.platform === 'darwin') {
+    return runProcess('open', [targetPath])
+  }
+  if (process.platform === 'win32') {
+    return runProcess('cmd', ['/c', 'start', '', targetPath])
+  }
   return runProcess('xdg-open', [targetPath])
 }
 
 const openFileLocationWithSystem = async (targetPath: string): Promise<boolean> => {
-  if (process.platform === 'darwin') return runProcess('open', ['-R', targetPath])
-  if (process.platform === 'win32') return runProcess('explorer', [`/select,${targetPath}`])
+  if (process.platform === 'darwin') {
+    return runProcess('open', ['-R', targetPath])
+  }
+  if (process.platform === 'win32') {
+    return runProcess('explorer', [`/select,${targetPath}`])
+  }
   return runProcess('xdg-open', [path.dirname(targetPath)])
 }
 
@@ -128,7 +143,9 @@ const sanitizeUploadedFileName = (fileName: string, fallbackFileName: string): s
     .replace(SAFE_FILE_NAME_REGEX, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
-  if (!normalized) return fallbackFileName
+  if (!normalized) {
+    return fallbackFileName
+  }
   return normalized.slice(0, 120)
 }
 
@@ -159,10 +176,14 @@ const resolveManagedSettingsFilePath = (
   kind: ManagedSettingsFileKind
 ): string | null => {
   const trimmedPath = rawPath.trim()
-  if (!trimmedPath) return null
+  if (!trimmedPath) {
+    return null
+  }
   const resolvedPath = path.resolve(trimmedPath)
   const managedDirectory = path.join(WEB_SETTINGS_FILES_DIR, kind)
-  if (!isPathWithinBase(managedDirectory, resolvedPath)) return null
+  if (!isPathWithinBase(managedDirectory, resolvedPath)) {
+    return null
+  }
   return resolvedPath
 }
 
@@ -174,7 +195,9 @@ const pruneManagedSettingsFiles = async (
   const keepPaths = new Set<string>()
   for (const rawPath of referencedPaths) {
     const managedPath = resolveManagedSettingsFilePath(rawPath, kind)
-    if (managedPath) keepPaths.add(managedPath)
+    if (managedPath) {
+      keepPaths.add(managedPath)
+    }
   }
   let entries: { isFile: () => boolean; name: string }[] = []
   try {
@@ -184,12 +207,18 @@ const pruneManagedSettingsFiles = async (
   }
   const now = Date.now()
   for (const entry of entries) {
-    if (!entry.isFile()) continue
+    if (!entry.isFile()) {
+      continue
+    }
     const candidatePath = path.resolve(path.join(managedDirectory, entry.name))
-    if (keepPaths.has(candidatePath)) continue
+    if (keepPaths.has(candidatePath)) {
+      continue
+    }
     try {
       const candidateInfo = await stat(candidatePath)
-      if (now - candidateInfo.mtimeMs < MANAGED_SETTINGS_FILE_RETENTION_MS) continue
+      if (now - candidateInfo.mtimeMs < MANAGED_SETTINGS_FILE_RETENTION_MS) {
+        continue
+      }
       await rm(candidatePath, { force: true })
     } catch {
       // Ignore cleanup errors to keep upload and settings updates resilient.
@@ -216,19 +245,75 @@ const PLAYLIST_GROUP_PREFIX = 'playlist_group_'
 
 const projectTask = (task: Readonly<Task>): DownloadTask => projectTaskForApi(task)
 
-const listTasksByStatuses = (statuses: ReadonlySet<TaskStatus>): DownloadTask[] => {
+const listTasksByStatuses = (
+  statuses: ReadonlySet<TaskStatus>,
+  publicSessionId: string | null
+): DownloadTask[] => {
   const tasks: Task[] = []
   let cursor: string | null = null
   do {
     const page = taskQueue.list({ limit: 200, cursor })
     for (const t of page.tasks) {
-      if (statuses.has(t.status)) tasks.push(t)
+      if (statuses.has(t.status) && taskBelongsToPublicSession(t, publicSessionId)) {
+        tasks.push(t)
+      }
     }
     cursor = page.nextCursor
   } while (cursor)
-  return tasks
-    .sort((a, b) => b.createdAt - a.createdAt)
-    .map(projectTask)
+  return tasks.sort((a, b) => b.createdAt - a.createdAt).map(projectTask)
+}
+
+const rejectPublicServerOperation = (): void => {
+  if (!isPublicSiteEnabled) {
+    return
+  }
+  throw new ORPCError('FORBIDDEN', {
+    message: 'This server operation is disabled on the public site.'
+  })
+}
+
+const sanitizeRuntimeSettings = (
+  settings: DownloadRuntimeSettings | undefined
+): DownloadRuntimeSettings | undefined => {
+  if (!(isPublicSiteEnabled && settings)) {
+    return settings
+  }
+  return {
+    embedSubs: settings.embedSubs,
+    embedThumbnail: settings.embedThumbnail,
+    embedMetadata: settings.embedMetadata,
+    embedChapters: settings.embedChapters
+  }
+}
+
+const ensurePublicTaskCapacity = (
+  publicSessionId: string | null,
+  requestedTaskCount: number
+): void => {
+  if (!(isPublicSiteEnabled && publicSessionId)) {
+    return
+  }
+
+  let activeTaskCount = 0
+  let cursor: string | null = null
+  do {
+    const page = taskQueue.list({ limit: 200, cursor })
+    for (const task of page.tasks) {
+      if (
+        NON_TERMINAL_TASK_STATUSES.has(task.status) &&
+        taskBelongsToPublicSession(task, publicSessionId)
+      ) {
+        activeTaskCount += 1
+      }
+    }
+    cursor = page.nextCursor
+  } while (cursor)
+
+  if (activeTaskCount + requestedTaskCount > PUBLIC_MAX_ACTIVE_TASKS) {
+    throw new ORPCError('TOO_MANY_REQUESTS', {
+      message: `Only ${PUBLIC_MAX_ACTIVE_TASKS} active downloads are allowed per session.`
+    })
+  }
 }
 
 export const rpcRouter = os.router({
@@ -242,9 +327,10 @@ export const rpcRouter = os.router({
     }
   }),
 
-  videoInfo: os.videoInfo.handler(async ({ input }) => {
+  videoInfo: os.videoInfo.handler(async ({ context, input }) => {
+    requirePublicSessionId(context)
     try {
-      const video = await fetchVideoInfo(input.url, input.settings)
+      const video = await fetchVideoInfo(input.url, sanitizeRuntimeSettings(input.settings))
       return { video }
     } catch (error) {
       throw new ORPCError('INTERNAL_SERVER_ERROR', {
@@ -254,9 +340,10 @@ export const rpcRouter = os.router({
   }),
 
   playlist: {
-    info: os.playlist.info.handler(async ({ input }) => {
+    info: os.playlist.info.handler(async ({ context, input }) => {
+      requirePublicSessionId(context)
       try {
-        const playlist = await fetchPlaylistInfo(input.url, input.settings)
+        const playlist = await fetchPlaylistInfo(input.url, sanitizeRuntimeSettings(input.settings))
         return { playlist }
       } catch (error) {
         throw new ORPCError('INTERNAL_SERVER_ERROR', {
@@ -264,9 +351,10 @@ export const rpcRouter = os.router({
         })
       }
     }),
-    download: os.playlist.download.handler(async ({ input }) => {
+    download: os.playlist.download.handler(async ({ context, input }) => {
+      const publicSessionId = requirePublicSessionId(context)
       try {
-        const playlist = await fetchPlaylistInfo(input.url, input.settings)
+        const playlist = await fetchPlaylistInfo(input.url, sanitizeRuntimeSettings(input.settings))
         const groupId = `${PLAYLIST_GROUP_PREFIX}${Date.now()}_${randomUUID().slice(0, 8)}`
 
         if (playlist.entryCount === 0) {
@@ -297,6 +385,12 @@ export const rpcRouter = os.router({
           const rangeEnd = Math.max(requestedStart, requestedEnd)
           selected = playlist.entries.slice(rangeStart, rangeEnd + 1)
         }
+        if (isPublicSiteEnabled && selected.length > PUBLIC_MAX_PLAYLIST_ENTRIES) {
+          throw new ORPCError('BAD_REQUEST', {
+            message: `Public playlist downloads are limited to ${PUBLIC_MAX_PLAYLIST_ENTRIES} entries.`
+          })
+        }
+        ensurePublicTaskCapacity(publicSessionId, selected.length)
 
         const created: Array<{
           downloadId: string
@@ -320,14 +414,17 @@ export const rpcRouter = os.router({
                 format: input.format,
                 audioFormat: input.audioFormat,
                 audioFormatIds: input.audioFormatIds,
-                customDownloadPath: input.customDownloadPath,
-                customFilenameTemplate: input.customFilenameTemplate,
+                customDownloadPath: isPublicSiteEnabled ? undefined : input.customDownloadPath,
+                customFilenameTemplate: isPublicSiteEnabled
+                  ? undefined
+                  : input.customFilenameTemplate,
                 containerFormat: input.containerFormat,
-                settings: input.settings,
+                settings: sanitizeRuntimeSettings(input.settings),
                 title: entry.title,
                 thumbnail: entry.thumbnail,
                 playlistTitle: playlist.title,
-                playlistSize: selected.length
+                playlistSize: selected.length,
+                publicSessionId
               }
             },
             groupKey: `playlist:${groupId}`
@@ -354,6 +451,9 @@ export const rpcRouter = os.router({
           }
         }
       } catch (error) {
+        if (error instanceof ORPCError) {
+          throw error
+        }
         throw new ORPCError('INTERNAL_SERVER_ERROR', {
           message: toErrorMessage(error, 'Failed to start playlist download.')
         })
@@ -362,8 +462,10 @@ export const rpcRouter = os.router({
   },
 
   downloads: {
-    create: os.downloads.create.handler(async ({ input }) => {
+    create: os.downloads.create.handler(async ({ context, input }) => {
+      const publicSessionId = requirePublicSessionId(context)
       try {
+        ensurePublicTaskCapacity(publicSessionId, 1)
         const result = await taskQueue.add({
           input: {
             url: input.url,
@@ -379,10 +481,12 @@ export const rpcRouter = os.router({
               audioFormatIds: input.audioFormatIds,
               startTime: input.startTime,
               endTime: input.endTime,
-              customDownloadPath: input.customDownloadPath,
-              customFilenameTemplate: input.customFilenameTemplate,
+              customDownloadPath: isPublicSiteEnabled ? undefined : input.customDownloadPath,
+              customFilenameTemplate: isPublicSiteEnabled
+                ? undefined
+                : input.customFilenameTemplate,
               containerFormat: input.containerFormat,
-              settings: input.settings,
+              settings: sanitizeRuntimeSettings(input.settings),
               title: input.title,
               thumbnail: input.thumbnail,
               description: input.description,
@@ -392,7 +496,8 @@ export const rpcRouter = os.router({
               tags: input.tags ? [...input.tags] : undefined,
               duration: input.duration,
               playlistTitle: input.playlistTitle,
-              playlistSize: input.playlistSize
+              playlistSize: input.playlistSize,
+              publicSessionId
             }
           }
         })
@@ -402,18 +507,25 @@ export const rpcRouter = os.router({
         }
         return { download: projectTask(created) }
       } catch (error) {
+        if (error instanceof ORPCError) {
+          throw error
+        }
         throw new ORPCError('INTERNAL_SERVER_ERROR', {
           message: toErrorMessage(error, 'Failed to create download.')
         })
       }
     }),
-    list: os.downloads.list.handler(() => {
-      return { downloads: listTasksByStatuses(NON_TERMINAL_TASK_STATUSES) }
+    list: os.downloads.list.handler(({ context }) => {
+      const publicSessionId = requirePublicSessionId(context)
+      return { downloads: listTasksByStatuses(NON_TERMINAL_TASK_STATUSES, publicSessionId) }
     }),
-    cancel: os.downloads.cancel.handler(async ({ input }) => {
+    cancel: os.downloads.cancel.handler(async ({ context, input }) => {
+      const publicSessionId = requirePublicSessionId(context)
       try {
         const task = taskQueue.get(input.id)
-        if (!task) return { cancelled: false }
+        if (!(task && taskBelongsToPublicSession(task, publicSessionId))) {
+          return { cancelled: false }
+        }
         await taskQueue.cancel(input.id)
         return { cancelled: true }
       } catch (error) {
@@ -425,16 +537,22 @@ export const rpcRouter = os.router({
   },
 
   history: {
-    list: os.history.list.handler(() => {
-      return { history: listTasksByStatuses(TERMINAL_TASK_STATUSES) }
+    list: os.history.list.handler(({ context }) => {
+      const publicSessionId = requirePublicSessionId(context)
+      return { history: listTasksByStatuses(TERMINAL_TASK_STATUSES, publicSessionId) }
     }),
-    removeItems: os.history.removeItems.handler(async ({ input }) => {
+    removeItems: os.history.removeItems.handler(async ({ context, input }) => {
+      const publicSessionId = requirePublicSessionId(context)
       let removed = 0
       for (const rawId of input.ids) {
         const id = rawId.trim()
-        if (!id) continue
+        if (!id) {
+          continue
+        }
         const task = taskQueue.get(id)
-        if (!task) continue
+        if (!(task && taskBelongsToPublicSession(task, publicSessionId))) {
+          continue
+        }
         try {
           await taskQueue.removeFromHistory(id)
           removed += 1
@@ -444,15 +562,22 @@ export const rpcRouter = os.router({
       }
       return { removed }
     }),
-    removeByPlaylist: os.history.removeByPlaylist.handler(async ({ input }) => {
+    removeByPlaylist: os.history.removeByPlaylist.handler(async ({ context, input }) => {
+      const publicSessionId = requirePublicSessionId(context)
       const playlistId = input.playlistId.trim()
-      if (!playlistId) return { removed: 0 }
+      if (!playlistId) {
+        return { removed: 0 }
+      }
       let removed = 0
       let cursor: string | null = null
       do {
         const page = taskQueue.list({ limit: 200, cursor })
         for (const t of page.tasks) {
-          if (t.input.playlistId === playlistId && TERMINAL_TASK_STATUSES.has(t.status)) {
+          if (
+            t.input.playlistId === playlistId &&
+            TERMINAL_TASK_STATUSES.has(t.status) &&
+            taskBelongsToPublicSession(t, publicSessionId)
+          ) {
             try {
               await taskQueue.removeFromHistory(t.id)
               removed += 1
@@ -469,6 +594,7 @@ export const rpcRouter = os.router({
 
   files: {
     exists: os.files.exists.handler(async ({ input }) => {
+      rejectPublicServerOperation()
       try {
         const resolvedPath = path.resolve(input.path)
         return { exists: await pathExists(resolvedPath) }
@@ -479,6 +605,7 @@ export const rpcRouter = os.router({
       }
     }),
     listDirectories: os.files.listDirectories.handler(async ({ input }) => {
+      rejectPublicServerOperation()
       try {
         return await listServerDirectories(input.path)
       } catch (error) {
@@ -488,10 +615,13 @@ export const rpcRouter = os.router({
       }
     }),
     openFile: os.files.openFile.handler(async ({ input }) => {
+      rejectPublicServerOperation()
       try {
         const resolvedPath = path.resolve(input.path)
         const exists = await pathExists(resolvedPath)
-        if (!exists) return { success: false }
+        if (!exists) {
+          return { success: false }
+        }
         return { success: await openFileWithSystem(resolvedPath) }
       } catch (error) {
         throw new ORPCError('INTERNAL_SERVER_ERROR', {
@@ -500,10 +630,13 @@ export const rpcRouter = os.router({
       }
     }),
     openFileLocation: os.files.openFileLocation.handler(async ({ input }) => {
+      rejectPublicServerOperation()
       try {
         const resolvedPath = path.resolve(input.path)
         const exists = await pathExists(resolvedPath)
-        if (!exists) return { success: false }
+        if (!exists) {
+          return { success: false }
+        }
         return { success: await openFileLocationWithSystem(resolvedPath) }
       } catch (error) {
         throw new ORPCError('INTERNAL_SERVER_ERROR', {
@@ -512,10 +645,13 @@ export const rpcRouter = os.router({
       }
     }),
     copyFileToClipboard: os.files.copyFileToClipboard.handler(async ({ input }) => {
+      rejectPublicServerOperation()
       try {
         const resolvedPath = path.resolve(input.path)
         const exists = await pathExists(resolvedPath)
-        if (!exists) return { success: false }
+        if (!exists) {
+          return { success: false }
+        }
         return { success: await copyFileToClipboardWithSystem(resolvedPath) }
       } catch (error) {
         throw new ORPCError('INTERNAL_SERVER_ERROR', {
@@ -524,6 +660,7 @@ export const rpcRouter = os.router({
       }
     }),
     deleteFile: os.files.deleteFile.handler(async ({ input }) => {
+      rejectPublicServerOperation()
       try {
         const settings = await webSettingsStore.get()
         const managedDownloadPath = settings.downloadPath.trim()
@@ -539,7 +676,9 @@ export const rpcRouter = os.router({
           })
         }
         const exists = await pathExists(resolvedPath)
-        if (!exists) return { success: false }
+        if (!exists) {
+          return { success: false }
+        }
         await rm(resolvedPath)
         return { success: true }
       } catch (error) {
@@ -549,6 +688,7 @@ export const rpcRouter = os.router({
       }
     }),
     uploadSettingsFile: os.files.uploadSettingsFile.handler(async ({ input }) => {
+      rejectPublicServerOperation()
       try {
         const storedPath = await storeWebSettingsFile(input.kind, input.fileName, input.content)
         triggerManagedSettingsFilePrune(input.kind, storedPath)
@@ -563,6 +703,7 @@ export const rpcRouter = os.router({
 
   settings: {
     get: os.settings.get.handler(async () => {
+      rejectPublicServerOperation()
       try {
         const settings = await webSettingsStore.get()
         return { settings }
@@ -573,6 +714,7 @@ export const rpcRouter = os.router({
       }
     }),
     set: os.settings.set.handler(async ({ input }) => {
+      rejectPublicServerOperation()
       try {
         const settings = await webSettingsStore.set(input.settings)
         return { settings }

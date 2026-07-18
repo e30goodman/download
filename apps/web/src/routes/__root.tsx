@@ -4,6 +4,7 @@ import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { useEffect } from "react";
 import { Toaster } from "sonner";
 import { i18n } from "../lib/i18n";
+import { siteConfig } from "../lib/site-config";
 import { applyThemeToDocument, readWebSettings } from "../lib/web-settings";
 
 import appCss from "../styles.css?url";
@@ -19,13 +20,22 @@ export const Route = createRootRoute({
 				content: "width=device-width, initial-scale=1",
 			},
 			{
-				title: "VidBee Web",
+				title: `${siteConfig.name} — video downloader`,
 			},
 		],
 		links: [
 			{
 				rel: "stylesheet",
 				href: appCss,
+			},
+			{
+				rel: "icon",
+				href: `${import.meta.env.BASE_URL}app-icon.svg`,
+				type: "image/svg+xml",
+			},
+			{
+				rel: "manifest",
+				href: `${import.meta.env.BASE_URL}manifest.json`,
 			},
 		],
 	}),
@@ -42,17 +52,19 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 				<RootHydrationEffects />
 				{children}
 				<Toaster richColors={true} />
-				<TanStackDevtools
-					config={{
-						position: "bottom-right",
-					}}
-					plugins={[
-						{
-							name: "Tanstack Router",
-							render: <TanStackRouterDevtoolsPanel />,
-						},
-					]}
-				/>
+				{import.meta.env.DEV ? (
+					<TanStackDevtools
+						config={{
+							position: "bottom-right",
+						}}
+						plugins={[
+							{
+								name: "Tanstack Router",
+								render: <TanStackRouterDevtoolsPanel />,
+							},
+						]}
+					/>
+				) : null}
 				<Scripts />
 			</body>
 		</html>

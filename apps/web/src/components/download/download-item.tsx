@@ -40,6 +40,7 @@ import {
 	AlertCircle,
 	CheckCircle2,
 	Copy,
+	Download,
 	File,
 	FolderOpen,
 	Loader2,
@@ -56,8 +57,9 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { orpcClient } from "../../lib/orpc-client";
+import { createBrowserDownloadUrl, orpcClient } from "../../lib/orpc-client";
 import { resolveImageProxyUrl } from "../../lib/remote-image-proxy";
+import { siteConfig } from "../../lib/site-config";
 import { readWebSettings } from "../../lib/web-settings";
 import type { DownloadRecord } from "./types";
 
@@ -323,6 +325,12 @@ export function DownloadItem({
 		let isMounted = true;
 
 		const checkFileExists = async () => {
+			if (siteConfig.isPublicSite) {
+				setFileExists(download.status === "completed");
+				setResolvedFilePath(null);
+				return;
+			}
+
 			const downloadPath =
 				download.downloadPath?.trim() || readWebSettings().downloadPath.trim();
 			if (!downloadPath) {
@@ -365,6 +373,7 @@ export function DownloadItem({
 			isMounted = false;
 		};
 	}, [
+		download.status,
 		download.title,
 		download.downloadPath,
 		download.savedFileName,
@@ -397,6 +406,11 @@ export function DownloadItem({
 	};
 
 	const handleOpenFile = async () => {
+		if (siteConfig.isPublicSite) {
+			window.location.assign(createBrowserDownloadUrl(download.id));
+			return;
+		}
+
 		const result = await tryFileOperation(async (filePath) => {
 			const response = await orpcClient.files.openFile({ path: filePath });
 			return response.success;
@@ -491,13 +505,17 @@ export function DownloadItem({
 	const isInProgressStatus = isActiveStatus(download.status);
 	const isCompletedStatus = download.status === "completed";
 	const canRetry = download.status === "error";
-	const showCopyAction = isCompletedStatus && fileExists;
+	const showCopyAction =
+		!siteConfig.isPublicSite && isCompletedStatus && fileExists;
 	const showOpenFolderAction = Boolean(
-		download.title && getEffectiveDownloadPath().trim(),
+		!siteConfig.isPublicSite &&
+			download.title &&
+			getEffectiveDownloadPath().trim(),
 	);
 	const canCopyLink = Boolean(download.url);
 	const canOpenFile = isCompletedStatus && fileExists;
-	const canDeleteFile = isCompletedStatus && fileExists;
+	const canDeleteFile =
+		!siteConfig.isPublicSite && isCompletedStatus && fileExists;
 	const canDeleteRecord = Boolean(onRemove);
 	const isSelectedHistory = isHistory && Boolean(onToggleSelect) && isSelected;
 
@@ -899,6 +917,19 @@ export function DownloadItem({
 									</div>
 								</div>
 								<div className="relative z-20 flex shrink-0 flex-wrap items-center justify-end gap-1 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
+									{siteConfig.isPublicSite && isCompletedStatus && (
+										<Button
+											className="gap-2 rounded-full"
+											onClick={(event) => {
+												event.stopPropagation();
+												void handleOpenFile();
+											}}
+											size="sm"
+										>
+											<Download className="h-4 w-4" />
+											{t("menu.download")}
+										</Button>
+									)}
 									{canRetry && (
 										<Button
 											className="h-8 w-8 shrink-0 rounded-full"

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",
+    "@fastify/rate-limit": "^11.1.0",
     "@orpc/openapi": "^1.13.5",
     "@orpc/server": "^1.13.5",
     "@orpc/zod": "^1.13.5",

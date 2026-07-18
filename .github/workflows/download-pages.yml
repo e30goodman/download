@@ -1,0 +1,64 @@
+name: Deploy Download site
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: download-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    if: github.repository == 'e30goodman/download'
+    runs-on: ubuntu-latest
+    env:
+      VITE_API_URL: ${{ vars.VIDBEE_API_URL }}
+      VITE_BASE_PATH: /download/
+      VITE_PUBLIC_SITE: "true"
+      VITE_SITE_NAME: Download
+    steps:
+      - name: Check API configuration
+        shell: bash
+        run: |
+          if [ -z "$VITE_API_URL" ]; then
+            echo "Set the VIDBEE_API_URL repository variable before deploying."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build static site
+        run: pnpm --filter ./apps/web run build:pages
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web/dist/client
+
+      - name: Deploy Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
