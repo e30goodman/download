@@ -68,7 +68,7 @@ interface DownloadItemProps {
 	download: DownloadRecord;
 	isSelected?: boolean;
 	onToggleSelect?: (id: string) => void;
-	onCancel?: (id: string) => void;
+	onCancel?: (id: string) => Promise<void> | void;
 	onRetry?: (download: DownloadRecord) => void;
 	onRemove?: (id: string) => void;
 	onCopyUrl?: (url: string) => void;
@@ -243,6 +243,7 @@ export function DownloadItem({
 	onCopyUrl,
 }: DownloadItemProps) {
 	const { t } = useTranslation();
+	const [isCancelling, setIsCancelling] = useState(false);
 	const isBrowserHandoff = download.entryType === "browser";
 	const isHistory = download.entryType !== "active";
 	const timestamp =
@@ -394,8 +395,16 @@ export function DownloadItem({
 		resolvedExtension,
 	]);
 
-	const handleCancel = () => {
-		onCancel?.(download.id);
+	const handleCancel = async () => {
+		if (isCancelling) {
+			return;
+		}
+		setIsCancelling(true);
+		try {
+			await onCancel?.(download.id);
+		} finally {
+			setIsCancelling(false);
+		}
 	};
 
 	const handleRetryDownload = () => {
@@ -1005,15 +1014,21 @@ export function DownloadItem({
 									)}
 									{isInProgressStatus && (
 										<Button
+											aria-label={t("download.cancel")}
 											className="h-8 w-8 shrink-0 rounded-full"
+											disabled={isCancelling}
 											onClick={(event) => {
 												event.stopPropagation();
-												handleCancel();
+												void handleCancel();
 											}}
 											size="icon"
 											variant="ghost"
 										>
-											<X className="h-4 w-4" />
+											{isCancelling ? (
+												<Loader2 className="h-4 w-4 animate-spin" />
+											) : (
+												<X className="h-4 w-4" />
+											)}
 										</Button>
 									)}
 								</div>
@@ -1227,7 +1242,12 @@ export function DownloadItem({
 							</ContextMenuItem>
 						)}
 						<ContextMenuSeparator />
-						<ContextMenuItem onClick={handleCancel}>
+						<ContextMenuItem
+							disabled={isCancelling}
+							onClick={() => {
+								void handleCancel();
+							}}
+						>
 							<X className="h-4 w-4" />
 							{t("download.cancel")}
 						</ContextMenuItem>

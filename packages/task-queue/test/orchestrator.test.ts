@@ -5,33 +5,20 @@
 import { describe, expect, it } from 'vitest'
 
 import { TaskQueueAPI } from '../src/api'
-import type {
-  Executor,
-  ExecutorEvents,
-  ExecutorRun
-} from '../src/executor'
-import { MemoryPersistAdapter } from '../src/persist'
 import type { TaskQueueEvent } from '../src/events'
+import type { Executor, ExecutorEvents, ExecutorRun } from '../src/executor'
+import { MemoryPersistAdapter } from '../src/persist'
 import type { ClassifiedError } from '../src/types'
 
 interface ScriptStep {
-  type:
-    | 'spawn'
-    | 'progress'
-    | 'success'
-    | 'errorRetryable'
-    | 'errorFatal'
-    | 'cancelled'
+  type: 'spawn' | 'progress' | 'success' | 'errorRetryable' | 'errorFatal' | 'cancelled'
 }
 
 function makeFakeExecutor(scriptByUrl: Map<string, ScriptStep[]>): Executor {
   let pidCounter = 1000
   return {
     run(ctx, events: ExecutorEvents): ExecutorRun {
-      const script = scriptByUrl.get(ctx.input.url) ?? [
-        { type: 'spawn' },
-        { type: 'success' }
-      ]
+      const script = scriptByUrl.get(ctx.input.url) ?? [{ type: 'spawn' }, { type: 'success' }]
       const pid = ++pidCounter
       let cancelled = false
       // Emit synchronously so tests don't have to await microtasks.
@@ -189,12 +176,7 @@ describe('TaskQueueAPI orchestrator', () => {
     const api = new TaskQueueAPI({
       persist: new MemoryPersistAdapter(),
       executor: makeFakeExecutor(
-        new Map([
-          [
-            'https://e.com/x',
-            [{ type: 'spawn' }, { type: 'errorFatal' }]
-          ]
-        ])
+        new Map([['https://e.com/x', [{ type: 'spawn' }, { type: 'errorFatal' }]]])
       ),
       filePresent: () => true
     })
@@ -209,7 +191,7 @@ describe('TaskQueueAPI orchestrator', () => {
   })
 
   it('retryable error → retry-scheduled then queued on tick', async () => {
-    let now = 1_000_000
+    const now = 1_000_000
     const ticks: number[] = []
     const api = new TaskQueueAPI({
       persist: new MemoryPersistAdapter(),
@@ -303,6 +285,55 @@ describe('TaskQueueAPI orchestrator', () => {
     await flush()
     expect(api.get(id)!.status).toBe('cancelled')
     expect(api.stats().running).toBe(0)
+  })
+
+  it('cancel before executor registration prevents the process from spawning', async () => {
+    let releaseInsert = (): void => undefined
+    let markInsertStarted = (): void => undefined
+    const insertStarted = new Promise<void>((resolve) => {
+      markInsertStarted = resolve
+    })
+    const insertGate = new Promise<void>((resolve) => {
+      releaseInsert = resolve
+    })
+    const persist = new MemoryPersistAdapter()
+    const originalInsertAttempt = persist.insertAttempt.bind(persist)
+    persist.insertAttempt = async (input) => {
+      markInsertStarted()
+      await insertGate
+      await originalInsertAttempt(input)
+    }
+    let executorRuns = 0
+    const executor: Executor = {
+      run() {
+        executorRuns += 1
+        return {
+          cancel: async () => undefined,
+          pause: async () => undefined
+        }
+      }
+    }
+    const api = new TaskQueueAPI({
+      persist,
+      executor,
+      filePresent: () => true
+    })
+    await api.start()
+    const id = 'cancel-before-spawn'
+    const addPromise = api.add({
+      id,
+      input: { url: 'https://e.com/cancel-before-spawn', kind: 'video' }
+    })
+
+    await insertStarted
+    await api.cancel(id, 'user')
+    releaseInsert()
+    await addPromise
+    await flush()
+
+    expect(api.get(id)?.status).toBe('cancelled')
+    expect(api.stats().running).toBe(0)
+    expect(executorRuns).toBe(0)
   })
 
   it('processing → completed guard fails when file missing/empty', async () => {

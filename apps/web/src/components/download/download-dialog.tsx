@@ -12,7 +12,7 @@ import { Input } from "@vidbee/ui/components/ui/input";
 import { Label } from "@vidbee/ui/components/ui/label";
 import { useAddUrlInteraction } from "@vidbee/ui/lib/use-add-url-interaction";
 import { useAddUrlShortcut } from "@vidbee/ui/lib/use-add-url-shortcut";
-import { FolderOpen, Loader2 } from "lucide-react";
+import { FolderOpen, Loader2, Music2, Video } from "lucide-react";
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -257,6 +257,7 @@ export function DownloadDialog({ onDownloadsChanged }: DownloadDialogProps) {
 		}
 		setSingleVideoState((prev) => ({
 			...prev,
+			activeTab: settings.oneClickDownloadType,
 			selectedVideoFormat: "",
 			selectedAudioFormat: "",
 			selectedContainer: undefined,
@@ -264,7 +265,7 @@ export function DownloadDialog({ onDownloadsChanged }: DownloadDialogProps) {
 			selectedFps: undefined,
 		}));
 		await fetchVideoInfo(url.trim());
-	}, [url, fetchVideoInfo, t]);
+	}, [url, fetchVideoInfo, settings.oneClickDownloadType, t]);
 
 	const handleParsePlaylistUrl = useCallback(
 		async (trimmedUrl: string) => {
@@ -311,6 +312,7 @@ export function DownloadDialog({ onDownloadsChanged }: DownloadDialogProps) {
 			setUrl(trimmedUrl);
 			setSingleVideoState((prev) => ({
 				...prev,
+				activeTab: settings.oneClickDownloadType,
 				selectedVideoFormat: "",
 				selectedAudioFormat: "",
 				selectedContainer: undefined,
@@ -319,7 +321,7 @@ export function DownloadDialog({ onDownloadsChanged }: DownloadDialogProps) {
 			}));
 			await fetchVideoInfo(trimmedUrl);
 		},
-		[fetchVideoInfo],
+		[fetchVideoInfo, settings.oneClickDownloadType],
 	);
 
 	const handleOneClickFromAddUrl = useCallback(
@@ -365,6 +367,19 @@ export function DownloadDialog({ onDownloadsChanged }: DownloadDialogProps) {
 		await startOneClickDownload(url, { clearInput: true });
 		setOpen(false);
 	}, [startOneClickDownload, url]);
+
+	const handleQuickDownloadTypeChange = useCallback(
+		(type: "video" | "audio") => {
+			updateSettings({ oneClickDownloadType: type });
+			setSingleVideoState((previousState) => ({
+				...previousState,
+				activeTab: type,
+				selectedAudioFormat: "",
+				selectedVideoFormat: "",
+			}));
+		},
+		[updateSettings],
+	);
 
 	const handlePreviewPlaylist = useCallback(async () => {
 		if (!playlistUrl.trim()) {
@@ -699,35 +714,67 @@ export function DownloadDialog({ onDownloadsChanged }: DownloadDialogProps) {
 							)}
 
 						{activeTab === "single" && !videoInfo && !loading && (
-							<div className="relative w-[320px]">
-								<Input
-									className="h-8 pr-8 text-xs"
-									onChange={(event) => setUrl(event.target.value)}
-									placeholder={t("download.urlPlaceholder")}
-									value={url}
-								/>
-								<div className="absolute top-1/2 right-1 -translate-y-1/2">
+							<div className="flex flex-wrap items-center gap-2">
+								<div className="flex shrink-0 gap-0.5 rounded-md bg-muted p-0.5">
 									<Button
-										className="h-6 w-6"
-										onClick={async () => {
-											if (!navigator.clipboard?.readText) {
-												return;
-											}
-											try {
-												const clipboardText =
-													await navigator.clipboard.readText();
-												if (clipboardText.trim()) {
-													setUrl(clipboardText.trim());
-												}
-											} catch {
-												// ignore
-											}
-										}}
-										size="icon"
-										variant="ghost"
+										aria-pressed={settings.oneClickDownloadType === "video"}
+										className="h-7 gap-1.5 px-2 text-xs"
+										onClick={() => handleQuickDownloadTypeChange("video")}
+										size="sm"
+										variant={
+											settings.oneClickDownloadType === "video"
+												? "secondary"
+												: "ghost"
+										}
 									>
-										<FolderOpen className="h-3 w-3 text-muted-foreground" />
+										<Video className="h-3.5 w-3.5" />
+										{t("download.video")}
 									</Button>
+									<Button
+										aria-pressed={settings.oneClickDownloadType === "audio"}
+										className="h-7 gap-1.5 px-2 text-xs"
+										onClick={() => handleQuickDownloadTypeChange("audio")}
+										size="sm"
+										variant={
+											settings.oneClickDownloadType === "audio"
+												? "secondary"
+												: "ghost"
+										}
+									>
+										<Music2 className="h-3.5 w-3.5" />
+										{t("download.audio")} MP3
+									</Button>
+								</div>
+								<div className="relative w-[280px] max-w-full">
+									<Input
+										className="h-8 pr-8 text-xs"
+										onChange={(event) => setUrl(event.target.value)}
+										placeholder={t("download.urlPlaceholder")}
+										value={url}
+									/>
+									<div className="absolute top-1/2 right-1 -translate-y-1/2">
+										<Button
+											className="h-6 w-6"
+											onClick={async () => {
+												if (!navigator.clipboard?.readText) {
+													return;
+												}
+												try {
+													const clipboardText =
+														await navigator.clipboard.readText();
+													if (clipboardText.trim()) {
+														setUrl(clipboardText.trim());
+													}
+												} catch {
+													// ignore
+												}
+											}}
+											size="icon"
+											variant="ghost"
+										>
+											<FolderOpen className="h-3 w-3 text-muted-foreground" />
+										</Button>
+									</div>
 								</div>
 							</div>
 						)}

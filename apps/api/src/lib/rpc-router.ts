@@ -36,6 +36,8 @@ const SAFE_FILE_NAME_REGEX = /[^A-Za-z0-9._-]+/g
 type ManagedSettingsFileKind = 'cookies' | 'config'
 const PUBLIC_MAX_ACTIVE_TASKS = 3
 const PUBLIC_MAX_PLAYLIST_ENTRIES = 10
+const CANCEL_CONFIRMATION_TIMEOUT_MS = 12_000
+const CANCEL_CONFIRMATION_POLL_MS = 100
 
 const TERMINAL_TASK_STATUSES = new Set<TaskStatus>(['completed', 'failed', 'cancelled'])
 const NON_TERMINAL_TASK_STATUSES = new Set<TaskStatus>([
@@ -45,6 +47,23 @@ const NON_TERMINAL_TASK_STATUSES = new Set<TaskStatus>([
   'paused',
   'retry-scheduled'
 ])
+
+const waitForTaskCancellation = async (taskId: string): Promise<boolean> => {
+  const deadline = Date.now() + CANCEL_CONFIRMATION_TIMEOUT_MS
+  while (Date.now() < deadline) {
+    const task = taskQueue.get(taskId)
+    if (!task || task.status === 'cancelled') {
+      return true
+    }
+    if (task.status === 'completed' || task.status === 'failed') {
+      return false
+    }
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, CANCEL_CONFIRMATION_POLL_MS)
+    })
+  }
+  return taskQueue.get(taskId)?.status === 'cancelled'
+}
 
 const toErrorMessage = (error: unknown, fallbackMessage: string): string => {
   if (error instanceof Error && error.message.trim().length > 0) {
@@ -627,7 +646,7 @@ export const rpcRouter = os.router({
           return { cancelled: false }
         }
         await taskQueue.cancel(input.id)
-        return { cancelled: true }
+        return { cancelled: await waitForTaskCancellation(input.id) }
       } catch (error) {
         throw new ORPCError('INTERNAL_SERVER_ERROR', {
           message: toErrorMessage(error, 'Failed to cancel download.')

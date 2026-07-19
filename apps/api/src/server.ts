@@ -11,6 +11,11 @@ import { ZodToJsonSchemaConverter } from '@orpc/zod/zod4'
 import { ZipArchive } from 'archiver'
 import Fastify from 'fastify'
 import { downloadDir, startTaskQueue, stopTaskQueue, taskQueue } from './lib/downloader'
+import {
+  recordQueueTransition,
+  recordRequestCompleted,
+  recordRequestStarted
+} from './lib/monitoring'
 import { projectTaskForApi } from './lib/projection'
 import {
   getTaskPublicSessionId,
@@ -47,6 +52,13 @@ export const createApiServer = async () => {
   const fastify = Fastify({
     logger: true,
     disableRequestLogging: isDev
+  })
+
+  fastify.addHook('onRequest', async (request) => {
+    recordRequestStarted(request)
+  })
+  fastify.addHook('onResponse', async (request, reply) => {
+    recordRequestCompleted(request, reply)
   })
 
   await fastify.register(cors, {
@@ -149,6 +161,7 @@ export const createApiServer = async () => {
     }
   })
   taskQueue.on('transition', (e) => {
+    recordQueueTransition(e)
     if (e.to === 'queued' || e.to === 'cancelled' || e.to === 'completed' || e.to === 'failed') {
       publishQueueUpdated()
     }

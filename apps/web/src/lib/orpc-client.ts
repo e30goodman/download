@@ -60,7 +60,9 @@ export const createBrowserDownloadUrl = (downloadId: string): string => {
 	return `${apiUrl}/downloads/${encodeURIComponent(downloadId)}/file${query}`;
 };
 
-export const createBrowserBatchDownloadUrl = (downloadIds: string[]): string => {
+export const createBrowserBatchDownloadUrl = (
+	downloadIds: string[],
+): string => {
 	const query = new URLSearchParams({
 		ids: downloadIds.join(","),
 	});

@@ -45,6 +45,17 @@ const DEFAULT_RETRIES = '30'
 const DEFAULT_FRAGMENT_RETRIES = '30'
 const DEFAULT_RETRY_SLEEP = '2'
 const DEFAULT_SOCKET_TIMEOUT = '30'
+const SUPPORTED_EXTRACT_AUDIO_FORMATS = new Set([
+  'aac',
+  'alac',
+  'best',
+  'flac',
+  'm4a',
+  'mp3',
+  'opus',
+  'vorbis',
+  'wav'
+])
 
 const appendNetworkResilienceArgs = (args: string[]): void => {
   args.push('--retries', DEFAULT_RETRIES)
@@ -92,17 +103,11 @@ export const normalizeBrowserCookiesSettingForYtDlp = (value?: string | null): s
   const isAbsolutePath = isWindowsPath
     ? path.win32.isAbsolute(profile)
     : path.posix.isAbsolute(profile)
-  if (
-    browser === 'firefox' &&
-    isAbsolutePath &&
-    existsSync(path.join(profile, 'cookies.sqlite'))
-  ) {
+  if (browser === 'firefox' && isAbsolutePath && existsSync(path.join(profile, 'cookies.sqlite'))) {
     return `${browser}:${profile}`
   }
 
-  const profileName = isWindowsPath
-    ? path.win32.basename(profile)
-    : path.posix.basename(profile)
+  const profileName = isWindowsPath ? path.win32.basename(profile) : path.posix.basename(profile)
   return profileName ? `${browser}:${profileName}` : browser
 }
 
@@ -268,6 +273,13 @@ export const resolveAudioFormatSelector = (options: YtDlpDownloadOptions): strin
   return format
 }
 
+const resolveExtractAudioFormat = (audioFormat: string | undefined): string | null => {
+  const normalizedFormat = audioFormat?.trim().toLowerCase()
+  return normalizedFormat && SUPPORTED_EXTRACT_AUDIO_FORMATS.has(normalizedFormat)
+    ? normalizedFormat
+    : null
+}
+
 export const buildDownloadArgs = (
   options: YtDlpDownloadOptions,
   fallbackDownloadPath: string,
@@ -300,6 +312,10 @@ export const buildDownloadArgs = (
     }
   } else if (options.type === 'audio') {
     args.push('-f', resolveAudioFormatSelector(options))
+    const extractAudioFormat = resolveExtractAudioFormat(options.audioFormat)
+    if (extractAudioFormat) {
+      args.push('--extract-audio', '--audio-format', extractAudioFormat)
+    }
   }
 
   if (options.startTime || options.endTime) {
@@ -321,7 +337,7 @@ export const buildDownloadArgs = (
   // VOD. Like Bilibili, skip forced subtitles for Twitch unless the user has
   // provided cookies that may unlock real subtitle tracks.
   const shouldAttemptSubtitles =
-    (!isBilibiliUrl(options.url) && !isTwitchUrl(options.url)) || hasSubtitleAuth
+    !(isBilibiliUrl(options.url) || isTwitchUrl(options.url)) || hasSubtitleAuth
 
   if (shouldAttemptSubtitles) {
     if (embedSubs) {

@@ -627,7 +627,14 @@ export const DownloadPage = () => {
 
 	const handleCancelDownload = async (id: string) => {
 		try {
-			await orpcClient.downloads.cancel({ id });
+			const result = await orpcClient.downloads.cancel({ id });
+			if (!result.cancelled) {
+				toast.error(t("notifications.downloadFailed"));
+				return;
+			}
+			setAllRecords((currentRecords) =>
+				currentRecords.filter((record) => record.id !== id),
+			);
 			await refreshData();
 		} catch (error) {
 			console.error("Failed to cancel download:", error);
