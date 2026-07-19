@@ -397,6 +397,14 @@ export class YtDlpExecutor implements Executor {
         })
         return
       }
+      // Some wrappers can emit an error before their yt-dlp/ffmpeg child
+      // tree exits. Kill it synchronously before the queue schedules a retry,
+      // otherwise the orphan can keep the output file locked on Windows.
+      try {
+        killProcessTree(proc?.ytDlpProcess?.pid, 'SIGKILL')
+      } catch {
+        /* noop */
+      }
       const error = virtualError('unknown', err.message)
       finishOnce({
         taskId: ctx.taskId,

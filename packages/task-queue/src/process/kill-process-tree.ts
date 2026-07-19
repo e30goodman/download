@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 
 /**
  * Kill a process together with its entire child tree, cross-platform.
@@ -23,10 +23,16 @@ export const killProcessTree = (
   }
 
   if (process.platform === 'win32') {
-    // Best-effort: the process may already be gone, so ignore taskkill errors.
-    execFile('taskkill', ['/PID', String(pid), '/T', '/F'], () => {
-      // noop — failures mean the tree is already terminated.
-    })
+    // Wait until taskkill has finished so a retry cannot start while an
+    // orphaned ffmpeg process still holds the previous attempt's output.
+    try {
+      execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], {
+        stdio: 'ignore',
+        windowsHide: true
+      })
+    } catch {
+      // Best-effort: failures usually mean the process is already gone.
+    }
     return
   }
 

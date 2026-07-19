@@ -78,7 +78,7 @@ export const CLASSIFIER_RULES: readonly Rule[] = [
   },
   {
     category: 'permission-denied',
-    regex: /EACCES|EPERM|Permission denied/i,
+    regex: /EACCES|EPERM|Permission denied|\[WinError 32\]|used by another process/i,
     exitCodeHint: null,
     defaultMaxAttempts: 0,
     defaultBackoffMs: null,

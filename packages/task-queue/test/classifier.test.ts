@@ -37,6 +37,10 @@ describe('ErrorClassifier rules (design §7.1)', () => {
     ['HTTP Error 404: not found', 'not-found'],
     ['ENOSPC: no space left on device', 'disk-full'],
     ['EACCES: permission denied', 'permission-denied'],
+    [
+      'ERROR: [WinError 32] The process cannot access the file because it is being used by another process',
+      'permission-denied'
+    ],
     ['ffmpeg: not found', 'binary-missing'],
     ['Postprocessing: ffmpeg failed', 'ffmpeg'],
     ['ECONNRESET on socket', 'network-transient'],
