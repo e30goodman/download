@@ -38,7 +38,8 @@ const DEFAULT_KILL_GRACE_MS = 10_000
 const STDOUT_TAIL_BYTES = 8 * 1024
 const STDERR_TAIL_BYTES = 8 * 1024
 const SUBTITLE_EXTENSIONS = new Set(['.srt', '.vtt', '.ass', '.ssa'])
-const AUDIO_EXTENSIONS = new Set(['.mp3', '.m4a', '.wav', '.opus', '.webm', '.ogg'])
+const AUDIO_EXTENSIONS = new Set(['.mp3', '.m4a', '.wav', '.opus', '.webm', '.ogg', '.aac'])
+const YT_DLP_DOWNLOAD_PERCENT = /\[download\]\s+(\d+(?:\.\d+)?)%/
 
 export interface WhisperCommand {
   command: string
@@ -212,7 +213,8 @@ export class TextTranscriptionExecutor implements Executor {
     const spawnTracked = (
       command: string,
       args: string[],
-      kind: 'yt-dlp' | 'ffmpeg'
+      kind: 'yt-dlp' | 'ffmpeg',
+      onLine?: (line: string) => void
     ): Promise<{ code: number | null }> =>
       new Promise((resolve, reject) => {
         if (cancelRequested) {
@@ -236,31 +238,31 @@ export class TextTranscriptionExecutor implements Executor {
             spawnedAt: this.opts.clock()
           })
         }
-        child.stdout?.on('data', (chunk: Buffer) => {
-          stdoutTail.push(chunk)
-          for (const line of chunk.toString('utf8').split(/\r?\n/)) {
-            if (line.trim()) {
-              events.onStd({
-                taskId: ctx.taskId,
-                attemptId: ctx.attemptId,
-                stream: 'stdout',
-                line
-              })
-            }
+        const handleChunk = (stream: 'stdout' | 'stderr', chunk: Buffer): void => {
+          if (stream === 'stdout') {
+            stdoutTail.push(chunk)
+          } else {
+            stderrTail.push(chunk)
           }
+          for (const line of chunk.toString('utf8').split(/\r?\n/)) {
+            const trimmed = line.trim()
+            if (!trimmed) {
+              continue
+            }
+            onLine?.(trimmed)
+            events.onStd({
+              taskId: ctx.taskId,
+              attemptId: ctx.attemptId,
+              stream,
+              line: trimmed
+            })
+          }
+        }
+        child.stdout?.on('data', (chunk: Buffer) => {
+          handleChunk('stdout', chunk)
         })
         child.stderr?.on('data', (chunk: Buffer) => {
-          stderrTail.push(chunk)
-          for (const line of chunk.toString('utf8').split(/\r?\n/)) {
-            if (line.trim()) {
-              events.onStd({
-                taskId: ctx.taskId,
-                attemptId: ctx.attemptId,
-                stream: 'stderr',
-                line
-              })
-            }
-          }
+          handleChunk('stderr', chunk)
         })
         child.on('error', (error) => {
           activeChild = null
@@ -271,6 +273,20 @@ export class TextTranscriptionExecutor implements Executor {
           resolve({ code })
         })
       })
+
+    const mapDownloadProgress = (line: string, fromPercent: number, toPercent: number): void => {
+      const match = YT_DLP_DOWNLOAD_PERCENT.exec(line)
+      if (!match) {
+        return
+      }
+      const downloaded = Number(match[1])
+      if (!Number.isFinite(downloaded)) {
+        return
+      }
+      const mapped =
+        fromPercent + (Math.max(0, Math.min(100, downloaded)) / 100) * (toPercent - fromPercent)
+      emitProgress(mapped)
+    }
 
     const runPipeline = async (): Promise<void> => {
       const taskOptions = (ctx.input.options ?? {}) as YtDlpTaskOptions
@@ -323,11 +339,9 @@ export class TextTranscriptionExecutor implements Executor {
         '--write-subs',
         '--write-auto-subs',
         '--sub-langs',
-        'en.*,ru.*,de.*,es.*,fr.*,pt.*,it.*,ja.*,ko.*,zh.*,*.default',
+        'all,-live_chat',
         '--sub-format',
         'vtt/srt/best',
-        '--convert-subs',
-        'srt',
         '-o',
         `${subsOut}.%(ext)s`,
         ctx.input.url
@@ -358,21 +372,21 @@ export class TextTranscriptionExecutor implements Executor {
 
       if (!isUsableTranscript(transcript)) {
         emitProgress(35, true)
+        // Avoid full-track MP3 remux — for long videos ffmpeg can sit for
+        // minutes with the UI frozen at 35%. Whisper accepts webm/m4a/opus.
         const audioOut = path.join(workDir, 'audio.%(ext)s')
         const audioArgs = [
           ...baseArgs,
+          '--newline',
           '-f',
-          'bestaudio/best',
-          '-x',
-          '--audio-format',
-          'mp3',
-          '--audio-quality',
-          '5',
+          'bestaudio[abr<=96]/bestaudio/best',
           '-o',
           audioOut,
           ctx.input.url
         ]
-        const audioResult = await spawnTracked(ytDlpPath, audioArgs, 'yt-dlp')
+        const audioResult = await spawnTracked(ytDlpPath, audioArgs, 'yt-dlp', (line) => {
+          mapDownloadProgress(line, 35, 54)
+        })
         if (cancelRequested) {
           finishOnce({
             taskId: ctx.taskId,
@@ -444,7 +458,20 @@ export class TextTranscriptionExecutor implements Executor {
         }
 
         emitProgress(55, true)
-        const whisperResult = await spawnTracked(whisperCmd.command, whisperCmd.args, 'ffmpeg')
+        let whisperPercent = 55
+        const whisperPulse = setInterval(() => {
+          if (settled || cancelRequested) {
+            return
+          }
+          whisperPercent = Math.min(94, whisperPercent + 1)
+          emitProgress(whisperPercent)
+        }, 4000)
+        let whisperResult: { code: number | null }
+        try {
+          whisperResult = await spawnTracked(whisperCmd.command, whisperCmd.args, 'ffmpeg')
+        } finally {
+          clearInterval(whisperPulse)
+        }
         if (cancelRequested) {
           finishOnce({
             taskId: ctx.taskId,
