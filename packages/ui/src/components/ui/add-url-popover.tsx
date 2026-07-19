@@ -1,5 +1,5 @@
 import { Plus } from 'lucide-react'
-import { useId } from 'react'
+import { type ReactNode, useId } from 'react'
 import { Button } from './button'
 import { Label } from './label'
 import { Popover, PopoverContent, PopoverTrigger } from './popover'
@@ -15,6 +15,8 @@ interface AddUrlPopoverProps {
   confirmLabel: string
   confirmDisabled?: boolean
   invalidMessage?: string
+  /** Optional controls shown above Cancel/Confirm, e.g. Video / Audio. */
+  extra?: ReactNode
   onOpenChange: (open: boolean) => void
   onTriggerClick: () => void
   onValueChange: (value: string) => void
@@ -32,6 +34,7 @@ export const AddUrlPopover = ({
   confirmLabel,
   confirmDisabled = false,
   invalidMessage,
+  extra,
   onOpenChange,
   onTriggerClick,
   onValueChange,
@@ -63,6 +66,7 @@ export const AddUrlPopover = ({
           />
         </div>
         {invalidMessage ? <p className="text-destructive text-xs">{invalidMessage}</p> : null}
+        {extra}
         <div className="flex justify-end gap-2">
           <Button onClick={onCancel} variant="outline">
             {cancelLabel}

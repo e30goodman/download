@@ -666,7 +666,47 @@ export function DownloadDialog({ onDownloadsChanged }: DownloadDialogProps) {
 				<AddUrlPopover
 					cancelLabel={t("download.cancel")}
 					confirmDisabled={!canConfirmAddUrl}
-					confirmLabel={t("download.fetch")}
+					confirmLabel={
+						settings.oneClickDownload
+							? settings.oneClickDownloadType === "audio"
+								? t("download.downloadAudio")
+								: t("download.downloadVideo")
+							: t("download.fetch")
+					}
+					extra={
+						<div className="flex shrink-0 gap-0.5 rounded-md bg-muted p-0.5">
+							<Button
+								aria-pressed={settings.oneClickDownloadType === "video"}
+								className="h-7 flex-1 gap-1.5 px-2 text-xs"
+								onClick={() => handleQuickDownloadTypeChange("video")}
+								size="sm"
+								type="button"
+								variant={
+									settings.oneClickDownloadType === "video"
+										? "secondary"
+										: "ghost"
+								}
+							>
+								<Video className="h-3.5 w-3.5" />
+								{t("download.video")}
+							</Button>
+							<Button
+								aria-pressed={settings.oneClickDownloadType === "audio"}
+								className="h-7 flex-1 gap-1.5 px-2 text-xs"
+								onClick={() => handleQuickDownloadTypeChange("audio")}
+								size="sm"
+								type="button"
+								variant={
+									settings.oneClickDownloadType === "audio"
+										? "secondary"
+										: "ghost"
+								}
+							>
+								<Music2 className="h-3.5 w-3.5" />
+								{t("download.audio")} MP3
+							</Button>
+						</div>
+					}
 					invalidMessage={
 						hasAddUrlValue && !canConfirmAddUrl
 							? t("errors.invalidUrl")
