@@ -1,6 +1,6 @@
 import type { OneClickContainerOption } from './format-preferences'
 
-export type DownloadType = 'video' | 'audio'
+export type DownloadType = 'video' | 'audio' | 'text'
 
 export type { OneClickContainerOption }
 

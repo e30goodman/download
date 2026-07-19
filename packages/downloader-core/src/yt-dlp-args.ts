@@ -18,7 +18,7 @@ export interface YtDlpDownloadSettings {
 
 export interface YtDlpDownloadOptions {
   url: string
-  type: 'video' | 'audio'
+  type: 'video' | 'audio' | 'text'
   format?: string
   audioFormat?: string
   audioFormatIds?: string[]
@@ -316,6 +316,8 @@ export const buildDownloadArgs = (
     if (extractAudioFormat) {
       args.push('--extract-audio', '--audio-format', extractAudioFormat)
     }
+  } else if (options.type === 'text') {
+    throw new Error('Text downloads must use TextTranscriptionExecutor')
   }
 
   if (options.startTime || options.endTime) {

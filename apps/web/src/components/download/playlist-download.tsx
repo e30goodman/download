@@ -2,6 +2,7 @@ import type { PlaylistInfo } from "@vidbee/downloader-core";
 import { Checkbox } from "@vidbee/ui/components/ui/checkbox";
 import { Input } from "@vidbee/ui/components/ui/input";
 import { Label } from "@vidbee/ui/components/ui/label";
+import { RemoteImage } from "@vidbee/ui/components/ui/remote-image";
 import { ScrollArea } from "@vidbee/ui/components/ui/scroll-area";
 import {
 	Select,
@@ -14,6 +15,7 @@ import { cn } from "@vidbee/ui/lib/cn";
 import { AlertCircle, List, Loader2 } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
 import { useTranslation } from "react-i18next";
+import { resolveImageProxyUrl } from "../../lib/remote-image-proxy";
 
 interface PlaylistDownloadProps {
 	playlistPreviewLoading: boolean;
@@ -172,6 +174,14 @@ export function PlaylistDownload({
 										/>
 										<div className="w-8 shrink-0 font-medium text-muted-foreground/70 text-xs tabular-nums">
 											#{entry.index}
+										</div>
+										<div className="h-10 w-16 shrink-0 overflow-hidden rounded bg-muted">
+											<RemoteImage
+												alt={entry.title || t("download.fetchingVideoInfo")}
+												cacheResolver={resolveImageProxyUrl}
+												className="h-full w-full object-cover"
+												src={entry.thumbnail}
+											/>
 										</div>
 										<div className="min-w-0 flex-1">
 											<p className="line-clamp-1 font-medium text-xs leading-tight">

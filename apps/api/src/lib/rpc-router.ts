@@ -20,6 +20,7 @@ import {
 } from './public-site'
 import { assertRemoteHttpUrl } from './remote-url-policy'
 import {
+  enrichDownloadSourceMetadata,
   fetchVideoInfoFromSource,
   isSpotifyUrl,
   resolveDownloadSource,
@@ -499,7 +500,12 @@ export const rpcRouter = os.router({
             const result = await taskQueue.add({
               input: {
                 url: entry.url,
-                kind: input.type === 'audio' ? 'audio' : 'video',
+                kind:
+                  input.type === 'audio'
+                    ? 'audio'
+                    : input.type === 'text'
+                      ? 'text'
+                      : 'video',
                 title: entry.title,
                 thumbnail: entry.thumbnail,
                 playlistId: groupId,
@@ -580,13 +586,22 @@ export const rpcRouter = os.router({
       try {
         await assertAllowedUserUrl(input.url)
         ensurePublicTaskCapacity(publicSessionId, 1)
-        const source = await resolveDownloadSource(input, spotifyPolicyMode())
+        const source = await enrichDownloadSourceMetadata(
+          await resolveDownloadSource(input, spotifyPolicyMode()),
+          sanitizeRuntimeSettings(input.settings),
+          spotifyPolicyMode()
+        )
         return await withPublicSessionMutationLock(publicSessionId, async () => {
           ensurePublicTaskCapacity(publicSessionId, 1)
           const result = await taskQueue.add({
             input: {
               url: source.url,
-              kind: input.type === 'audio' ? 'audio' : 'video',
+              kind:
+                input.type === 'audio'
+                  ? 'audio'
+                  : input.type === 'text'
+                    ? 'text'
+                    : 'video',
               title: source.title,
               thumbnail: source.thumbnail,
               playlistId: input.playlistId,

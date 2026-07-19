@@ -109,7 +109,7 @@ export const isDirectDownloadEligible = ({
 	containerFormat,
 }: {
 	isPublicSite: boolean;
-	type: "video" | "audio";
+	type: "video" | "audio" | "text";
 	format: VideoFormat | undefined;
 	settings?: DownloadRuntimeSettings;
 	audioFormat?: string;

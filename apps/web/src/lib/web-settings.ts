@@ -107,7 +107,7 @@ const toOneClickContainer = (value: unknown): OneClickContainerOption => {
 };
 
 const toDownloadType = (value: unknown): DownloadType => {
-	if (value === "audio" || value === "video") {
+	if (value === "audio" || value === "video" || value === "text") {
 		return value;
 	}
 	return defaultWebSettings.oneClickDownloadType;

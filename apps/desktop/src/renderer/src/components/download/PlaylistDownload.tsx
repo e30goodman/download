@@ -1,6 +1,7 @@
 import { Checkbox } from '@renderer/components/ui/checkbox'
 import { Input } from '@renderer/components/ui/input'
 import { Label } from '@renderer/components/ui/label'
+import { RemoteImage } from '@renderer/components/ui/remote-image'
 import { ScrollArea } from '@renderer/components/ui/scroll-area'
 import {
   Select,
@@ -154,6 +155,13 @@ export function PlaylistDownload({
                     />
                     <div className="w-8 shrink-0 font-medium text-muted-foreground/70 text-xs tabular-nums">
                       #{entry.index}
+                    </div>
+                    <div className="h-10 w-16 shrink-0 overflow-hidden rounded bg-muted">
+                      <RemoteImage
+                        alt={entry.title || t('download.fetchingVideoInfo')}
+                        className="h-full w-full object-cover"
+                        src={entry.thumbnail}
+                      />
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="line-clamp-1 font-medium text-xs leading-tight">

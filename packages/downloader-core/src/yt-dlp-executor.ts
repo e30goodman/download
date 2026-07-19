@@ -69,7 +69,7 @@ interface ProgressPayload {
  * back out at spawn time.
  */
 export interface YtDlpTaskOptions {
-  type?: 'video' | 'audio'
+  type?: 'video' | 'audio' | 'text'
   format?: string
   audioFormat?: string
   audioFormatIds?: readonly string[]

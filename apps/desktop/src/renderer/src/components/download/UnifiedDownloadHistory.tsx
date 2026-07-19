@@ -77,7 +77,7 @@ const resolveDownloadExtension = (download: DownloadRecord): string => {
   if (selectedExt) {
     return selectedExt
   }
-  return download.type === 'audio' ? 'mp3' : 'mp4'
+  return download.type === 'audio' ? 'mp3' : download.type === 'text' ? 'txt' : 'mp4'
 }
 
 const isEditableTarget = (target: EventTarget | null): boolean => {

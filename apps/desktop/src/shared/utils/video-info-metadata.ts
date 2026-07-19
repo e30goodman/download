@@ -106,6 +106,10 @@ export const pickOneClickSelectedFormat = (
     return matchingBitrate ?? sortedAudioFormats[0]
   }
 
+  if (settings.oneClickDownloadType === 'text') {
+    return undefined
+  }
+
   const sortedVideoFormats = formats.filter(isVideoFormat).sort(sortVideoFormatsByQuality)
   if (sortedVideoFormats.length === 0) {
     return undefined

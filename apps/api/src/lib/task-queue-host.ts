@@ -19,14 +19,13 @@ import fs from 'node:fs'
 import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
-
-import {
-  MemoryPersistAdapter,
-  SqlitePersistAdapter,
-  TaskQueueAPI
-} from '@vidbee/task-queue'
 import { TASK_QUEUE_DDL_V1 } from '@vidbee/db/task-queue'
-import { YtDlpExecutor } from '@vidbee/downloader-core'
+import {
+  createDownloadExecutor,
+  TextTranscriptionExecutor,
+  YtDlpExecutor
+} from '@vidbee/downloader-core'
+import { MemoryPersistAdapter, SqlitePersistAdapter, TaskQueueAPI } from '@vidbee/task-queue'
 
 const require = createRequire(import.meta.url)
 
@@ -107,10 +106,37 @@ const resolveFfmpegLocation = (): string | undefined => {
   return undefined
 }
 
-const executor = new YtDlpExecutor({
+const mediaExecutor = new YtDlpExecutor({
   resolveYtDlpPath,
   resolveFfmpegLocation,
   defaultDownloadDir: apiDefaultDownloadDir
+})
+
+const resolveWhisperCommand = (audioPath: string, outputPath: string) => {
+  const python = trimEnv('WHISPER_PYTHON')
+  const script = trimEnv('WHISPER_SCRIPT')
+  const model = trimEnv('WHISPER_MODEL') ?? 'base'
+  if (!python || !script || !fs.existsSync(python) || !fs.existsSync(script)) {
+    throw new Error(
+      'Whisper is not configured. Set WHISPER_PYTHON and WHISPER_SCRIPT (needed when subtitles are missing).'
+    )
+  }
+  return {
+    command: python,
+    args: [script, audioPath, outputPath, '--model', model]
+  }
+}
+
+const textExecutor = new TextTranscriptionExecutor({
+  resolveYtDlpPath,
+  resolveFfmpegLocation,
+  resolveWhisperCommand,
+  defaultDownloadDir: apiDefaultDownloadDir
+})
+
+const executor = createDownloadExecutor({
+  media: mediaExecutor,
+  text: textExecutor
 })
 
 const buildPersistAdapter = () => {
@@ -139,7 +165,7 @@ export const taskQueue = new TaskQueueAPI({
   maxConcurrency: apiMaxConcurrent
 })
 
-export const taskQueueExecutor = executor
+export const taskQueueExecutor = mediaExecutor
 
 let started = false
 export const startTaskQueue = async (): Promise<void> => {

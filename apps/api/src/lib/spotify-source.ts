@@ -663,3 +663,29 @@ export const resolveDownloadSource = async (
     spotify: null
   }
 }
+
+/**
+ * One-click / Text creates often omit title/thumbnail. Probe yt-dlp so the
+ * public queue can show a real preview image instead of an empty placeholder.
+ */
+export const enrichDownloadSourceMetadata = async (
+  source: ResolvedDownloadSource,
+  settings: DownloadRuntimeSettings | undefined,
+  policyMode: RemoteUrlPolicyMode,
+  dependencies: SourceVideoInfoDependencies = {}
+): Promise<ResolvedDownloadSource> => {
+  if (source.title?.trim() && source.thumbnail?.trim()) {
+    return source
+  }
+  try {
+    const info = await fetchVideoInfoFromSource(source.url, settings, policyMode, dependencies)
+    return {
+      ...source,
+      title: source.title?.trim() || info.title,
+      thumbnail: source.thumbnail?.trim() || info.thumbnail,
+      duration: source.duration ?? info.duration
+    }
+  } catch {
+    return source
+  }
+}

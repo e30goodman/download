@@ -1,5 +1,6 @@
 import type {
 	CreateDownloadInput,
+	DownloadType,
 	PlaylistInfo,
 	VideoFormat,
 	VideoInfo,
@@ -12,7 +13,7 @@ import { Input } from "@vidbee/ui/components/ui/input";
 import { Label } from "@vidbee/ui/components/ui/label";
 import { useAddUrlInteraction } from "@vidbee/ui/lib/use-add-url-interaction";
 import { useAddUrlShortcut } from "@vidbee/ui/lib/use-add-url-shortcut";
-import { FolderOpen, Loader2, Music2, Video } from "lucide-react";
+import { FileText, FolderOpen, Loader2, Music2, Video } from "lucide-react";
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -220,7 +221,9 @@ export function DownloadDialog({ onDownloadsChanged }: DownloadDialogProps) {
 			const format =
 				settings.oneClickDownloadType === "video"
 					? buildVideoFormatPreference(settings)
-					: buildAudioFormatPreference(settings);
+					: settings.oneClickDownloadType === "audio"
+						? buildAudioFormatPreference(settings)
+						: undefined;
 			const containerFormat =
 				settings.oneClickDownloadType === "video"
 					? settings.oneClickContainer
@@ -257,7 +260,7 @@ export function DownloadDialog({ onDownloadsChanged }: DownloadDialogProps) {
 		}
 		setSingleVideoState((prev) => ({
 			...prev,
-			activeTab: settings.oneClickDownloadType,
+			activeTab: settings.oneClickDownloadType === "audio" ? "audio" : "video",
 			selectedVideoFormat: "",
 			selectedAudioFormat: "",
 			selectedContainer: undefined,
@@ -312,7 +315,8 @@ export function DownloadDialog({ onDownloadsChanged }: DownloadDialogProps) {
 			setUrl(trimmedUrl);
 			setSingleVideoState((prev) => ({
 				...prev,
-				activeTab: settings.oneClickDownloadType,
+				activeTab:
+					settings.oneClickDownloadType === "audio" ? "audio" : "video",
 				selectedVideoFormat: "",
 				selectedAudioFormat: "",
 				selectedContainer: undefined,
@@ -345,7 +349,8 @@ export function DownloadDialog({ onDownloadsChanged }: DownloadDialogProps) {
 		setAddUrlValue,
 	} = useAddUrlInteraction({
 		activeTab,
-		isOneClickDownloadEnabled: settings.oneClickDownload,
+		isOneClickDownloadEnabled:
+			settings.oneClickDownload || settings.oneClickDownloadType === "text",
 		isPlaylistBusy: playlistBusy,
 		onEmptyUrl: () => {
 			toast.error(t("errors.emptyUrl"));
@@ -369,16 +374,72 @@ export function DownloadDialog({ onDownloadsChanged }: DownloadDialogProps) {
 	}, [startOneClickDownload, url]);
 
 	const handleQuickDownloadTypeChange = useCallback(
-		(type: "video" | "audio") => {
+		(type: DownloadType) => {
 			updateSettings({ oneClickDownloadType: type });
-			setSingleVideoState((previousState) => ({
-				...previousState,
-				activeTab: type,
-				selectedAudioFormat: "",
-				selectedVideoFormat: "",
-			}));
+			if (type === "video" || type === "audio") {
+				setSingleVideoState((previousState) => ({
+					...previousState,
+					activeTab: type,
+					selectedAudioFormat: "",
+					selectedVideoFormat: "",
+				}));
+			}
 		},
 		[updateSettings],
+	);
+
+	const quickDownloadConfirmLabel =
+		settings.oneClickDownloadType === "text"
+			? t("download.downloadText")
+			: settings.oneClickDownloadType === "audio"
+				? t("download.downloadAudio")
+				: t("download.downloadVideo");
+
+	const skipFormatPicker =
+		settings.oneClickDownload || settings.oneClickDownloadType === "text";
+
+	const typeToggle = (
+		<div className="flex shrink-0 gap-0.5 rounded-md bg-muted p-0.5">
+			<Button
+				aria-pressed={settings.oneClickDownloadType === "video"}
+				className="h-7 flex-1 gap-1.5 px-2 text-xs"
+				onClick={() => handleQuickDownloadTypeChange("video")}
+				size="sm"
+				type="button"
+				variant={
+					settings.oneClickDownloadType === "video" ? "secondary" : "ghost"
+				}
+			>
+				<Video className="h-3.5 w-3.5" />
+				{t("download.video")}
+			</Button>
+			<Button
+				aria-pressed={settings.oneClickDownloadType === "audio"}
+				className="h-7 flex-1 gap-1.5 px-2 text-xs"
+				onClick={() => handleQuickDownloadTypeChange("audio")}
+				size="sm"
+				type="button"
+				variant={
+					settings.oneClickDownloadType === "audio" ? "secondary" : "ghost"
+				}
+			>
+				<Music2 className="h-3.5 w-3.5" />
+				{t("download.audio")}
+			</Button>
+			<Button
+				aria-pressed={settings.oneClickDownloadType === "text"}
+				className="h-7 flex-1 gap-1.5 px-2 text-xs"
+				onClick={() => handleQuickDownloadTypeChange("text")}
+				size="sm"
+				type="button"
+				variant={
+					settings.oneClickDownloadType === "text" ? "secondary" : "ghost"
+				}
+			>
+				<FileText className="h-3.5 w-3.5" />
+				{t("download.text")}
+			</Button>
+		</div>
 	);
 
 	const handlePreviewPlaylist = useCallback(async () => {
@@ -667,46 +728,9 @@ export function DownloadDialog({ onDownloadsChanged }: DownloadDialogProps) {
 					cancelLabel={t("download.cancel")}
 					confirmDisabled={!canConfirmAddUrl}
 					confirmLabel={
-						settings.oneClickDownload
-							? settings.oneClickDownloadType === "audio"
-								? t("download.downloadAudio")
-								: t("download.downloadVideo")
-							: t("download.fetch")
+						skipFormatPicker ? quickDownloadConfirmLabel : t("download.fetch")
 					}
-					extra={
-						<div className="flex shrink-0 gap-0.5 rounded-md bg-muted p-0.5">
-							<Button
-								aria-pressed={settings.oneClickDownloadType === "video"}
-								className="h-7 flex-1 gap-1.5 px-2 text-xs"
-								onClick={() => handleQuickDownloadTypeChange("video")}
-								size="sm"
-								type="button"
-								variant={
-									settings.oneClickDownloadType === "video"
-										? "secondary"
-										: "ghost"
-								}
-							>
-								<Video className="h-3.5 w-3.5" />
-								{t("download.video")}
-							</Button>
-							<Button
-								aria-pressed={settings.oneClickDownloadType === "audio"}
-								className="h-7 flex-1 gap-1.5 px-2 text-xs"
-								onClick={() => handleQuickDownloadTypeChange("audio")}
-								size="sm"
-								type="button"
-								variant={
-									settings.oneClickDownloadType === "audio"
-										? "secondary"
-										: "ghost"
-								}
-							>
-								<Music2 className="h-3.5 w-3.5" />
-								{t("download.audio")} MP3
-							</Button>
-						</div>
-					}
+					extra={typeToggle}
 					invalidMessage={
 						hasAddUrlValue && !canConfirmAddUrl
 							? t("errors.invalidUrl")
@@ -755,36 +779,7 @@ export function DownloadDialog({ onDownloadsChanged }: DownloadDialogProps) {
 
 						{activeTab === "single" && !videoInfo && !loading && (
 							<div className="flex flex-wrap items-center gap-2">
-								<div className="flex shrink-0 gap-0.5 rounded-md bg-muted p-0.5">
-									<Button
-										aria-pressed={settings.oneClickDownloadType === "video"}
-										className="h-7 gap-1.5 px-2 text-xs"
-										onClick={() => handleQuickDownloadTypeChange("video")}
-										size="sm"
-										variant={
-											settings.oneClickDownloadType === "video"
-												? "secondary"
-												: "ghost"
-										}
-									>
-										<Video className="h-3.5 w-3.5" />
-										{t("download.video")}
-									</Button>
-									<Button
-										aria-pressed={settings.oneClickDownloadType === "audio"}
-										className="h-7 gap-1.5 px-2 text-xs"
-										onClick={() => handleQuickDownloadTypeChange("audio")}
-										size="sm"
-										variant={
-											settings.oneClickDownloadType === "audio"
-												? "secondary"
-												: "ghost"
-										}
-									>
-										<Music2 className="h-3.5 w-3.5" />
-										{t("download.audio")} MP3
-									</Button>
-								</div>
+								{typeToggle}
 								<div className="relative w-[280px] max-w-full">
 									<Input
 										className="h-8 pr-8 text-xs"
@@ -836,12 +831,10 @@ export function DownloadDialog({ onDownloadsChanged }: DownloadDialogProps) {
 								<Button
 									disabled={loading || !url.trim()}
 									onClick={
-										settings.oneClickDownload
-											? handleOneClickDownload
-											: handleFetchVideo
+										skipFormatPicker ? handleOneClickDownload : handleFetchVideo
 									}
 								>
-									{settings.oneClickDownload
+									{skipFormatPicker
 										? t("download.oneClickDownloadNow")
 										: t("download.startDownload")}
 								</Button>

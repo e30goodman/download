@@ -230,7 +230,11 @@ const resolveDownloadExtension = (download: DownloadRecord): string => {
 	if (selectedExt) {
 		return selectedExt;
 	}
-	return download.type === "audio" ? "mp3" : "mp4";
+	return download.type === "audio"
+		? "mp3"
+		: download.type === "text"
+			? "txt"
+			: "mp4";
 };
 
 export function DownloadItem({
@@ -885,6 +889,14 @@ export function DownloadItem({
 												variant="secondary"
 											>
 												{t("download.audio")}
+											</Badge>
+										)}
+										{download.type === "text" && (
+											<Badge
+												className="shrink-0 px-1.5 py-0.5 text-[10px]"
+												variant="secondary"
+											>
+												{t("download.text")}
 											</Badge>
 										)}
 										{isBrowserHandoff && (

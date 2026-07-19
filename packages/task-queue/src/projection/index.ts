@@ -66,8 +66,8 @@ export interface LegacyTaskProjection {
   url: string
   title?: string
   thumbnail?: string
-  /** Legacy `type` field. Derived from TaskKind: audio for `audio`, video otherwise. */
-  type: 'video' | 'audio'
+  /** Legacy `type` field. Derived from TaskKind / options.type. */
+  type: 'video' | 'audio' | 'text'
   status: LegacyDownloadStatus
   /** Internal status kept verbatim so callers that DO know about task-queue
    *  can branch without re-reading `task.status`. */
@@ -178,13 +178,22 @@ interface MaybeHostFields {
 export function projectTaskToLegacy(task: Readonly<Task>): LegacyTaskProjection {
   const status = legacyDownloadStatusOf(task.status)
   const subStatus = legacySubStatusOf(task.status)
-  const opts = (task.input.options ?? {}) as MaybeHostFields
+  const opts = (task.input.options ?? {}) as MaybeHostFields & { type?: string }
+  const optionsType = opts.type
+  const projectedType =
+    optionsType === 'text' || optionsType === 'audio' || optionsType === 'video'
+      ? optionsType
+      : task.kind === 'audio'
+        ? 'audio'
+        : task.kind === 'text'
+          ? 'text'
+          : 'video'
   const proj: LegacyTaskProjection = {
     id: task.id,
     url: task.input.url,
     title: task.input.title,
     thumbnail: task.input.thumbnail,
-    type: task.kind === 'audio' ? 'audio' : 'video',
+    type: projectedType,
     status,
     internalStatus: task.status,
     statusReason: task.statusReason,

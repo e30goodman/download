@@ -20,7 +20,6 @@ import path from 'node:path'
 import { PRIORITY_USER, type Task, type TaskInput, type TaskQueueAPI } from '@vidbee/task-queue'
 
 import type {
-  DownloadItem,
   DownloadOptions,
   DownloadProgress,
   PlaylistDownloadOptions,
@@ -97,7 +96,7 @@ const buildTaskInput = (id: string, options: DownloadOptions): TaskInput => {
   const downloadPath = options.customDownloadPath?.trim() || settings.downloadPath || ''
   return {
     url: options.url,
-    kind: options.type === 'audio' ? 'audio' : 'video',
+    kind: options.type === 'audio' ? 'audio' : options.type === 'text' ? 'text' : 'video',
     subscriptionId: options.subscriptionId,
     // Stash renderer-fetched metadata at the canonical TaskInput slots so
     // projectTaskToLegacy round-trips them. Without these, the renderer's
@@ -306,7 +305,7 @@ class DownloadFacade extends EventEmitter {
         const result = await this.queue.add({
           input: {
             url: entry.url,
-            kind: options.type === 'audio' ? 'audio' : 'video',
+            kind: options.type === 'audio' ? 'audio' : options.type === 'text' ? 'text' : 'video',
             title: entry.title,
             playlistId: groupId,
             playlistIndex: entry.index,

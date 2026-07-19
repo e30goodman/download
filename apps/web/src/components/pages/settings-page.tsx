@@ -570,7 +570,7 @@ export const SettingsPage = () => {
 													onValueChange={(value) =>
 														updateSingleSetting(
 															"oneClickDownloadType",
-															value as "audio" | "video",
+															value as "audio" | "video" | "text",
 															updateSettings,
 														)
 													}
@@ -585,6 +585,9 @@ export const SettingsPage = () => {
 														</SelectItem>
 														<SelectItem value="audio">
 															{t("download.audio")}
+														</SelectItem>
+														<SelectItem value="text">
+															{t("download.text")}
 														</SelectItem>
 													</SelectContent>
 												</Select>

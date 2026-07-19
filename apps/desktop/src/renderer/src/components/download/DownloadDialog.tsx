@@ -306,7 +306,9 @@ export function DownloadDialog({
       const format =
         settings.oneClickDownloadType === 'video'
           ? buildVideoFormatPreference(settings)
-          : buildAudioFormatPreference(settings)
+          : settings.oneClickDownloadType === 'audio'
+            ? buildAudioFormatPreference(settings)
+            : undefined
       const containerFormat =
         settings.oneClickDownloadType === 'video' ? settings.oneClickContainer : undefined
 
@@ -315,6 +317,7 @@ export function DownloadDialog({
           url: downloadTargetUrl,
           type: settings.oneClickDownloadType,
           format,
+          audioFormat: settings.oneClickDownloadType === 'audio' ? 'mp3' : undefined,
           containerFormat,
           ...metadata,
           selectedFormat

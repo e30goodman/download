@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-export const DownloadTypeSchema = z.enum(['video', 'audio'])
+export const DownloadTypeSchema = z.enum(['video', 'audio', 'text'])
 export const DownloadStatusSchema = z.enum([
   'pending',
   'downloading',

@@ -14,7 +14,11 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { TASK_QUEUE_DDL_V1 } from '@vidbee/db/task-queue'
-import { YtDlpExecutor } from '@vidbee/downloader-core'
+import {
+  createDownloadExecutor,
+  TextTranscriptionExecutor,
+  YtDlpExecutor
+} from '@vidbee/downloader-core'
 import { MemoryPersistAdapter, SqlitePersistAdapter, TaskQueueAPI } from '@vidbee/task-queue'
 import { app } from 'electron'
 import { settingsManager } from '../settings'
@@ -56,13 +60,39 @@ let started = false
 let dbPath: string | null = null
 let persistent = false
 
-const buildExecutor = (): YtDlpExecutor =>
+const buildMediaExecutor = (): YtDlpExecutor =>
   new YtDlpExecutor({
     resolveYtDlpPath,
     resolveFfmpegLocation,
     defaultDownloadDir: resolveDownloadDir(),
     extraArgs: () => ytdlpManager.getJsRuntimeArgs?.() ?? []
   })
+
+const resolveWhisperCommand = (audioPath: string, outputPath: string) => {
+  const python = process.env.WHISPER_PYTHON?.trim()
+  const script = process.env.WHISPER_SCRIPT?.trim()
+  const model = process.env.WHISPER_MODEL?.trim() || 'base'
+  if (!(python && script && fs.existsSync(python) && fs.existsSync(script))) {
+    throw new Error(
+      'Whisper is not configured. Set WHISPER_PYTHON and WHISPER_SCRIPT (needed when subtitles are missing).'
+    )
+  }
+  return {
+    command: python,
+    args: [script, audioPath, outputPath, '--model', model]
+  }
+}
+
+const buildExecutor = () => {
+  const media = buildMediaExecutor()
+  const text = new TextTranscriptionExecutor({
+    resolveYtDlpPath,
+    resolveFfmpegLocation,
+    resolveWhisperCommand,
+    defaultDownloadDir: resolveDownloadDir()
+  })
+  return createDownloadExecutor({ media, text })
+}
 
 const buildPersistAdapter = (
   desiredDbPath: string,

@@ -9,6 +9,7 @@
 export type TaskKind =
   | 'video'
   | 'audio'
+  | 'text'
   | 'playlist'
   | 'subscription-item'
   | 'yt-dlp-forward'

@@ -63,7 +63,7 @@ export interface DownloadItem {
   url: string
   title: string
   thumbnail?: string
-  type: 'video' | 'audio'
+  type: 'video' | 'audio' | 'text'
   status: DownloadStatus
   progress?: DownloadProgress
   error?: string
@@ -129,7 +129,7 @@ export interface DownloadHistoryItem {
   url: string
   title: string
   thumbnail?: string
-  type: 'video' | 'audio'
+  type: 'video' | 'audio' | 'text'
   status: DownloadStatus
   downloadPath?: string
   savedFileName?: string
@@ -161,7 +161,7 @@ export interface DownloadHistoryItem {
 
 export interface DownloadOptions {
   url: string
-  type: 'video' | 'audio'
+  type: 'video' | 'audio' | 'text'
   format?: string
   audioFormat?: string
   audioFormatIds?: string[]
@@ -208,7 +208,7 @@ export interface PlaylistInfo {
 
 export interface PlaylistDownloadOptions {
   url: string
-  type: 'video' | 'audio'
+  type: 'video' | 'audio' | 'text'
   format?: string
   entryIds?: string[]
   startIndex?: number
@@ -231,7 +231,7 @@ export interface PlaylistDownloadResult {
   groupId: string
   playlistId: string
   playlistTitle: string
-  type: 'video' | 'audio'
+  type: 'video' | 'audio' | 'text'
   totalCount: number
   startIndex: number
   endIndex: number
@@ -316,7 +316,7 @@ export interface AppSettings {
   language: LanguageCode
   theme: string
   oneClickDownload: boolean
-  oneClickDownloadType: 'video' | 'audio'
+  oneClickDownloadType: 'video' | 'audio' | 'text'
   oneClickQuality: OneClickQualityPreset
   oneClickContainer: OneClickContainerOption
   closeToTray: boolean

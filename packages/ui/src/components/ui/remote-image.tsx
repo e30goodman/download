@@ -94,13 +94,15 @@ export function RemoteImage({
           return
         }
 
-        setResolvedSrc(resolved)
+        // Fall back to the original URL when the proxy/cache path fails or
+        // times out so YouTube/CDN thumbs still render on the public site.
+        setResolvedSrc(resolved ?? value)
       } catch {
         if (!isActive) {
           return
         }
 
-        setResolvedSrc(undefined)
+        setResolvedSrc(value)
       } finally {
         if (timeoutId >= 0) {
           window.clearTimeout(timeoutId)

@@ -415,6 +415,7 @@ export function Settings() {
                         <SelectContent>
                           <SelectItem value="video">{t('download.video')}</SelectItem>
                           <SelectItem value="audio">{t('download.audio')}</SelectItem>
+                          <SelectItem value="text">{t('download.text')}</SelectItem>
                         </SelectContent>
                       </Select>
                     </ItemActions>
