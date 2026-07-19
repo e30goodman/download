@@ -348,6 +348,37 @@ export class TaskQueueAPI {
         // eslint-disable-next-line no-console
         console.error('[task-queue] cancel run threw', err)
       }
+      // If the executor never settles (stuck whisper/ffmpeg), force cancel so
+      // the public-site X button does not hang forever.
+      const cancelStartedAt = this.clock()
+      void (async () => {
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 8_000)
+        })
+        const cur = this.store.get(id)
+        if (
+          !(
+            cur &&
+            (cur.status === 'running' || cur.status === 'processing') &&
+            this.active.get(id)?.attemptId === active.attemptId
+          )
+        ) {
+          return
+        }
+        try {
+          await this.applyTransition(id, 'cancelled', {
+            trigger: 'cancel',
+            reason: `cancel-timeout:${this.clock() - cancelStartedAt}ms`
+          })
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.error('[task-queue] force cancel failed', err)
+          return
+        }
+        this.active.delete(id)
+        this.watchdog.disarm(id)
+        await this.scheduler.releaseSlot(id)
+      })()
       return
     }
     // Cancellation can arrive after the task enters `running` but before

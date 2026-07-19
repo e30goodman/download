@@ -220,8 +220,6 @@ export function DownloadItem({ download, isSelected = false, onToggleSelect }: D
   const isSubscriptionDownload = download.origin === 'subscription'
   const subscriptionLabel = download.subscriptionId ?? t('subscriptions.labels.unknown')
   const timestamp = download.completedAt ?? download.downloadedAt ?? download.createdAt
-  const actionsContainerClass =
-    'relative z-20 flex shrink-0 flex-wrap items-center justify-end gap-1 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity'
   const resolvedExtension = resolveDownloadExtension(download)
   const normalizedSavedFileName = normalizeSavedFileName(download.savedFileName)
   const selectionEnabled = isHistory && Boolean(onToggleSelect)
@@ -551,6 +549,9 @@ export function DownloadItem({ download, isSelected = false, onToggleSelect }: D
     download.status === 'downloading' ||
     download.status === 'processing' ||
     download.status === 'pending'
+  const actionsContainerClass = `relative z-20 flex shrink-0 flex-wrap items-center justify-end gap-1 text-muted-foreground transition-opacity ${
+    isInProgressStatus ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+  }`
   const isCompletedStatus = download.status === 'completed'
   const isTerminalStatus =
     download.status === 'completed' ||

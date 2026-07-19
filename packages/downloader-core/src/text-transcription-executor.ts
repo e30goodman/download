@@ -474,6 +474,18 @@ export class TextTranscriptionExecutor implements Executor {
         transcript = readFileSync(whisperOut, 'utf8').trim()
       }
 
+      if (cancelRequested) {
+        finishOnce({
+          taskId: ctx.taskId,
+          attemptId: ctx.attemptId,
+          result: { type: 'cancelled' },
+          closedAt: this.opts.clock(),
+          stdoutTail: stdoutTail.toString(),
+          stderrTail: stderrTail.toString()
+        })
+        return
+      }
+
       if (!isUsableTranscript(transcript)) {
         finishOnce({
           taskId: ctx.taskId,
@@ -539,29 +551,45 @@ export class TextTranscriptionExecutor implements Executor {
     const requestStop = async (): Promise<void> => {
       cancelRequested = true
       const child = activeChild
-      if (!child?.pid) return
-      try {
-        killProcessTree(child.pid)
-      } catch {
+      if (child?.pid) {
         try {
-          child.kill('SIGTERM')
+          killProcessTree(child.pid)
         } catch {
-          /* noop */
-        }
-      }
-      killTimer = setTimeout(() => {
-        if (child.pid) {
           try {
-            killProcessTree(child.pid, 'SIGKILL')
+            child.kill('SIGTERM')
           } catch {
-            try {
-              child.kill('SIGKILL')
-            } catch {
-              /* noop */
-            }
+            /* noop */
           }
         }
-      }, this.opts.killGraceMs)
+        killTimer = setTimeout(() => {
+          if (child.pid) {
+            try {
+              killProcessTree(child.pid, 'SIGKILL')
+            } catch {
+              try {
+                child.kill('SIGKILL')
+              } catch {
+                /* noop */
+              }
+            }
+          }
+        }, this.opts.killGraceMs)
+      }
+
+      // Between subprocesses (or a stuck child) cancel must still settle the
+      // attempt so the UI X button does not hang waiting for confirmation.
+      setTimeout(() => {
+        if (!settled && cancelRequested) {
+          finishOnce({
+            taskId: ctx.taskId,
+            attemptId: ctx.attemptId,
+            result: { type: 'cancelled' },
+            closedAt: this.opts.clock(),
+            stdoutTail: stdoutTail.toString(),
+            stderrTail: stderrTail.toString()
+          })
+        }
+      }, 1500)
     }
 
     return {
