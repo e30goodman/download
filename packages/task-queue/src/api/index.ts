@@ -528,11 +528,18 @@ export class TaskQueueAPI {
             this.applyProgress(id, e.progress)
             this.watchdog.bump(id)
             if (e.enteredProcessing) {
-              void this.applyTransition(id, 'processing', {
-                trigger: 'progressing',
-                reason: null
-              })
-              this.watchdog.promoteToProcessing(id)
+              const current = this.store.get(id)
+              // Executors may keep signaling processing on later progress ticks;
+              // only the first running → processing transition is legal.
+              if (current?.status === 'running') {
+                void this.applyTransition(id, 'processing', {
+                  trigger: 'progressing',
+                  reason: null
+                })
+              }
+              if (current?.status === 'running' || current?.status === 'processing') {
+                this.watchdog.promoteToProcessing(id)
+              }
             }
           },
           onStd: (e) => {

@@ -164,6 +164,7 @@ export class TextTranscriptionExecutor implements Executor {
     const stderrTail = createTailBuffer(STDERR_TAIL_BYTES)
     let settled = false
     let cancelRequested = false
+    let enteredProcessing = false
     let killTimer: NodeJS.Timeout | null = null
     let activeChild: ChildProcess | null = null
     let workDir: string | null = null
@@ -187,8 +188,12 @@ export class TextTranscriptionExecutor implements Executor {
     }
 
     let progressTicks = 0
-    const emitProgress = (percent: number, enteredProcessing = false): void => {
+    const emitProgress = (percent: number, markProcessing = false): void => {
       progressTicks += 1
+      const shouldEnterProcessing = markProcessing && !enteredProcessing
+      if (shouldEnterProcessing) {
+        enteredProcessing = true
+      }
       events.onProgress({
         taskId: ctx.taskId,
         attemptId: ctx.attemptId,
@@ -200,7 +205,7 @@ export class TextTranscriptionExecutor implements Executor {
           etaMs: null,
           ticks: progressTicks
         },
-        enteredProcessing
+        enteredProcessing: shouldEnterProcessing
       })
     }
 
