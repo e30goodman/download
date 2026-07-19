@@ -10,6 +10,7 @@ import { RPCHandler } from '@orpc/server/fastify'
 import { ZodToJsonSchemaConverter } from '@orpc/zod/zod4'
 import { ZipArchive } from 'archiver'
 import Fastify from 'fastify'
+import { createAttachmentContentDisposition } from './lib/content-disposition'
 import { downloadDir, startTaskQueue, stopTaskQueue, taskQueue } from './lib/downloader'
 import {
   recordQueueTransition,
@@ -354,7 +355,7 @@ export const createApiServer = async () => {
       const fileName = path.basename(filePath).replace(/["\r\n]/g, '_')
       reply.header('Content-Type', 'application/octet-stream')
       reply.header('Content-Length', fileInfo.size.toString())
-      reply.header('Content-Disposition', `attachment; filename="${fileName}"`)
+      reply.header('Content-Disposition', createAttachmentContentDisposition(fileName))
       return reply.send(createReadStream(filePath))
     } catch {
       return reply.code(404).send({ message: 'Download file was not found.' })
@@ -419,7 +420,7 @@ export const createApiServer = async () => {
     const archiveName = `downloads-${new Date().toISOString().slice(0, 10)}.zip`
     reply.header('Cache-Control', 'private, no-store')
     reply.header('Content-Type', 'application/zip')
-    reply.header('Content-Disposition', `attachment; filename="${archiveName}"`)
+    reply.header('Content-Disposition', createAttachmentContentDisposition(archiveName))
     for (const [index, file] of files.entries()) {
       const duplicateIndex = files.findIndex((entry) => entry.fileName === file.fileName)
       const archiveFileName =
