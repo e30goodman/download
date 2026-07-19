@@ -121,17 +121,42 @@ const listFilesRecursive = (dir: string): string[] => {
   return out
 }
 
+const PREFERRED_SUB_LANGS = ['ru', 'en', 'fr'] as const
+
 const pickBestSubtitleFile = (files: string[]): string | null => {
   const subs = files.filter((file) => SUBTITLE_EXTENSIONS.has(path.extname(file).toLowerCase()))
   if (subs.length === 0) return null
+  const langOf = (file: string): string | null => {
+    const name = path.basename(file).toLowerCase()
+    for (const lang of PREFERRED_SUB_LANGS) {
+      if (
+        name.includes(`.${lang}.`) ||
+        name.endsWith(`.${lang}.srt`) ||
+        name.endsWith(`.${lang}.vtt`) ||
+        name.includes(`.${lang}-`) ||
+        name.includes(`_${lang}.`)
+      ) {
+        return lang
+      }
+    }
+    return null
+  }
   const rank = (file: string): number => {
     const name = path.basename(file).toLowerCase()
-    if (name.includes('.en.') || name.endsWith('.en.srt') || name.endsWith('.en.vtt')) return 0
-    if (name.includes('.ru.')) return 1
-    if (!name.includes('auto')) return 2
-    return 3
+    const lang = langOf(file)
+    const isAuto = name.includes('auto') || name.includes('.orig.')
+    if (lang === 'ru') return isAuto ? 1 : 0
+    if (lang === 'en') return isAuto ? 3 : 2
+    if (lang === 'fr') return isAuto ? 5 : 4
+    // Ignore random auto languages (Afar etc.) — Whisper handles those better.
+    return isAuto ? 90 : 80
   }
-  return [...subs].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))[0] ?? null
+  const ranked = [...subs].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))
+  const best = ranked[0]
+  if (!best) return null
+  // If only exotic auto-subs exist, skip them and fall through to Whisper.
+  if (rank(best) >= 80) return null
+  return best
 }
 
 const pickAudioFile = (files: string[]): string | null => {
@@ -339,7 +364,7 @@ export class TextTranscriptionExecutor implements Executor {
         '--write-subs',
         '--write-auto-subs',
         '--sub-langs',
-        'all,-live_chat',
+        'ru.*,en.*,fr.*,all,-live_chat',
         '--sub-format',
         'vtt/srt/best',
         '-o',

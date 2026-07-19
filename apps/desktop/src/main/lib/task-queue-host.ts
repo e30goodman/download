@@ -72,6 +72,7 @@ const resolveWhisperCommand = (audioPath: string, outputPath: string) => {
   const python = process.env.WHISPER_PYTHON?.trim()
   const script = process.env.WHISPER_SCRIPT?.trim()
   const model = process.env.WHISPER_MODEL?.trim() || 'base'
+  const language = process.env.WHISPER_LANGUAGE?.trim() || 'auto'
   if (!(python && script && fs.existsSync(python) && fs.existsSync(script))) {
     throw new Error(
       'Whisper is not configured. Set WHISPER_PYTHON and WHISPER_SCRIPT (needed when subtitles are missing).'
@@ -79,7 +80,7 @@ const resolveWhisperCommand = (audioPath: string, outputPath: string) => {
   }
   return {
     command: python,
-    args: [script, audioPath, outputPath, '--model', model]
+    args: [script, audioPath, outputPath, '--model', model, '--language', language]
   }
 }
 

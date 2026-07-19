@@ -116,6 +116,7 @@ const resolveWhisperCommand = (audioPath: string, outputPath: string) => {
   const python = trimEnv('WHISPER_PYTHON')
   const script = trimEnv('WHISPER_SCRIPT')
   const model = trimEnv('WHISPER_MODEL') ?? 'base'
+  const language = trimEnv('WHISPER_LANGUAGE') ?? 'auto'
   if (!python || !script || !fs.existsSync(python) || !fs.existsSync(script)) {
     throw new Error(
       'Whisper is not configured. Set WHISPER_PYTHON and WHISPER_SCRIPT (needed when subtitles are missing).'
@@ -123,7 +124,7 @@ const resolveWhisperCommand = (audioPath: string, outputPath: string) => {
   }
   return {
     command: python,
-    args: [script, audioPath, outputPath, '--model', model]
+    args: [script, audioPath, outputPath, '--model', model, '--language', language]
   }
 }
 

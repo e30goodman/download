@@ -36,7 +36,16 @@ export const subtitleFileToPlainText = (content: string): string => {
     buffer = []
     collecting = false
     if (!text) return
-    if (cues.at(-1) === text) return
+    const previous = cues.at(-1)
+    if (previous === text) return
+    // YouTube auto-captions roll forward: each cue extends the previous one.
+    if (previous && text.startsWith(previous)) {
+      cues[cues.length - 1] = text
+      return
+    }
+    if (previous && previous.startsWith(text)) {
+      return
+    }
     cues.push(text)
   }
 
