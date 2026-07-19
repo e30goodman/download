@@ -549,9 +549,8 @@ export function DownloadItem({ download, isSelected = false, onToggleSelect }: D
     download.status === 'downloading' ||
     download.status === 'processing' ||
     download.status === 'pending'
-  const actionsContainerClass = `relative z-20 flex shrink-0 flex-wrap items-center justify-end gap-1 text-muted-foreground transition-opacity ${
-    isInProgressStatus ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-  }`
+  const actionsContainerClass =
+    'relative z-20 flex shrink-0 flex-wrap items-center justify-end gap-1 text-muted-foreground'
   const isCompletedStatus = download.status === 'completed'
   const isTerminalStatus =
     download.status === 'completed' ||

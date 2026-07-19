@@ -969,13 +969,7 @@ export function DownloadItem({
 										)}
 									</div>
 								</div>
-								<div
-									className={`relative z-20 flex shrink-0 flex-wrap items-center justify-end gap-1 pointer-events-auto text-muted-foreground transition-opacity ${
-										isInProgressStatus
-											? "opacity-100"
-											: "opacity-0 group-hover:opacity-100"
-									}`}
-								>
+								<div className="relative z-20 flex shrink-0 flex-wrap items-center justify-end gap-1 pointer-events-auto text-muted-foreground">
 									{siteConfig.isPublicSite &&
 										isCompletedStatus &&
 										!isBrowserHandoff && (
