@@ -456,31 +456,38 @@ export function DownloadDialog({
 
 	const handleOneClickFromAddUrl = useCallback(
 		async (trimmedUrl: string) => {
+			let title: string | undefined;
+			let thumbnail: string | undefined;
+			let pageUrl = trimmedUrl;
+
 			try {
 				const result = await orpcClient.videoInfo({
 					url: trimmedUrl,
 					settings: readOrpcDownloadSettings(),
 				});
-				addBrowserDownloadRecord(
-					createBrowserHandedOffRecord({
-						filename: `${result.video.title || "download"}.mp4`,
-						selectedFormat: {
-							formatId: "preset:original:mp4",
-							ext: "mp4",
-							formatNote: "Best quality",
-						},
-						thumbnail: result.video.thumbnail,
-						title: result.video.title,
-						type: "video",
-						url: result.video.webpageUrl || trimmedUrl,
-					}),
-				);
-				toast.success(t("download.addedToQueue"));
-				await notifyDownloadsChanged();
+				title = result.video.title;
+				thumbnail = result.video.thumbnail;
+				pageUrl = result.video.webpageUrl || trimmedUrl;
 			} catch (error) {
-				console.error("Failed to add URL to queue list:", error);
-				toast.error(t("errors.fetchInfoFailed"));
+				console.warn("Preview unavailable, adding URL without metadata:", error);
 			}
+
+			addBrowserDownloadRecord(
+				createBrowserHandedOffRecord({
+					filename: `${title || "download"}.mp4`,
+					selectedFormat: {
+						formatId: "preset:original:mp4",
+						ext: "mp4",
+						formatNote: "Best quality",
+					},
+					thumbnail,
+					title: title || trimmedUrl,
+					type: "video",
+					url: pageUrl,
+				}),
+			);
+			toast.success(t("download.addedToQueue"));
+			await notifyDownloadsChanged();
 		},
 		[notifyDownloadsChanged, t],
 	);
