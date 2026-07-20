@@ -736,6 +736,10 @@ export const DownloadPage = () => {
 				audioFormat: presetFormats.audioFormat,
 				settings: readOrpcDownloadSettings(),
 			});
+			if (download.entryType === "history") {
+				await orpcClient.history.removeItems({ ids: [download.id] });
+				pruneSelectedIds([download.id]);
+			}
 			toast.success(t("download.addedToQueue"));
 			await refreshData();
 		} catch (error) {
