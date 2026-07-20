@@ -227,7 +227,8 @@
       "subscription": "訂閱"
     },
     "formatFallbackTitle": "Selected format unavailable",
-    "formatFallbackHint": "Your pick was not deliverable, so VidBee fell back to best available ({{resolved}})."
+    "formatFallbackHint": "Your pick was not deliverable, so VidBee fell back to best available ({{resolved}}).",
+    "chooseFormat": "選擇格式"
   },
   "error": {
     "title": "發生錯誤",
@@ -320,7 +321,8 @@
       "completed": "已完成",
       "error": "錯誤"
     },
-    "title": "下載歷史"
+    "title": "下載歷史",
+    "copyShareLink": "複製下載連結"
   },
   "menu": {
     "about": "關於",
@@ -350,7 +352,8 @@
     "removeFailed": "移除項目失敗",
     "settingsSaved": "設定已儲存",
     "urlCopied": "連結已複製到剪貼簿",
-    "videoCopied": "影片已複製到剪貼簿"
+    "videoCopied": "影片已複製到剪貼簿",
+    "shareLinkCopied": "下載連結已複製到剪貼簿"
   },
   "playlist": {
     "badgeLabel": "播放列表",

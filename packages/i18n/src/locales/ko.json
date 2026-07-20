@@ -227,7 +227,8 @@
       "subscription": "신청"
     },
     "formatFallbackTitle": "Selected format unavailable",
-    "formatFallbackHint": "Your pick was not deliverable, so VidBee fell back to best available ({{resolved}})."
+    "formatFallbackHint": "Your pick was not deliverable, so VidBee fell back to best available ({{resolved}}).",
+    "chooseFormat": "형식 선택"
   },
   "error": {
     "title": "문제가 발생했습니다",
@@ -320,7 +321,8 @@
       "completed": "완료",
       "error": "오류"
     },
-    "title": "다운로드 기록"
+    "title": "다운로드 기록",
+    "copyShareLink": "다운로드 링크 복사"
   },
   "menu": {
     "about": "정보",
@@ -350,7 +352,8 @@
     "removeFailed": "항목 제거 실패",
     "settingsSaved": "설정 저장됨",
     "urlCopied": "URL이 클립보드에 복사됨",
-    "videoCopied": "비디오가 클립보드에 복사됨"
+    "videoCopied": "비디오가 클립보드에 복사됨",
+    "shareLinkCopied": "다운로드 링크가 클립보드에 복사되었습니다"
   },
   "playlist": {
     "badgeLabel": "재생목록",

@@ -227,7 +227,8 @@
       "subscription": "Berlangganan"
     },
     "formatFallbackTitle": "Selected format unavailable",
-    "formatFallbackHint": "Your pick was not deliverable, so VidBee fell back to best available ({{resolved}})."
+    "formatFallbackHint": "Your pick was not deliverable, so VidBee fell back to best available ({{resolved}}).",
+    "chooseFormat": "Pilih format"
   },
   "error": {
     "title": "Terjadi kesalahan",
@@ -320,7 +321,8 @@
       "completed": "Selesai",
       "error": "Kesalahan"
     },
-    "title": "Riwayat Unduhan"
+    "title": "Riwayat Unduhan",
+    "copyShareLink": "Salin tautan unduhan"
   },
   "menu": {
     "about": "Tentang",
@@ -350,7 +352,8 @@
     "removeFailed": "Gagal menghapus item",
     "settingsSaved": "Pengaturan disimpan",
     "urlCopied": "URL disalin ke clipboard",
-    "videoCopied": "Video disalin ke clipboard"
+    "videoCopied": "Video disalin ke clipboard",
+    "shareLinkCopied": "Tautan unduhan disalin ke clipboard"
   },
   "playlist": {
     "badgeLabel": "Playlist",

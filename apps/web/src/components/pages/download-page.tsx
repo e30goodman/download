@@ -48,6 +48,10 @@ import {
 import { HIGHLIGHTED_SITE_LABELS } from "../../lib/supported-sites";
 import { readOrpcDownloadSettings } from "../../lib/orpc-download-settings";
 import { readWebSettings } from "../../lib/web-settings";
+import {
+	buildFormatSelectorFromPreset,
+	type RowFormatSelection,
+} from "../../lib/row-format-presets";
 import { buildSingleVideoFormatSelector } from "../../lib/video-format-selector";
 import { DownloadDialog } from "../download/download-dialog";
 import { DownloadItem } from "../download/download-item";
@@ -704,17 +708,14 @@ export const DownloadPage = () => {
 
 	const handleFormatChange = async (
 		download: DownloadRecord,
-		format: NonNullable<DownloadRecord["selectedFormat"]>,
+		selection: RowFormatSelection,
 	) => {
 		if (download.entryType === "browser" || !download.url) {
 			return;
 		}
 
 		try {
-			const resolvedFormat =
-				download.type === "video"
-					? buildSingleVideoFormatSelector(format.formatId, format)
-					: format.formatId;
+			const presetFormats = buildFormatSelectorFromPreset(selection);
 
 			await orpcClient.downloads.create({
 				url: download.url,
@@ -727,13 +728,12 @@ export const DownloadPage = () => {
 				uploader: download.uploader,
 				viewCount: download.viewCount,
 				tags: download.tags,
-				selectedFormat: format,
 				playlistId: download.playlistId,
 				playlistTitle: download.playlistTitle,
 				playlistIndex: download.playlistIndex,
 				playlistSize: download.playlistSize,
-				format: resolvedFormat,
-				audioFormat: download.type === "audio" ? "mp3" : undefined,
+				format: presetFormats.format,
+				audioFormat: presetFormats.audioFormat,
 				settings: readOrpcDownloadSettings(),
 			});
 			toast.success(t("download.addedToQueue"));

@@ -227,7 +227,8 @@
       "subscription": "Abonnement"
     },
     "formatFallbackTitle": "Selected format unavailable",
-    "formatFallbackHint": "Your pick was not deliverable, so VidBee fell back to best available ({{resolved}})."
+    "formatFallbackHint": "Your pick was not deliverable, so VidBee fell back to best available ({{resolved}}).",
+    "chooseFormat": "Choisir le format"
   },
   "error": {
     "title": "Un problème est survenu",
@@ -320,7 +321,8 @@
       "completed": "Terminé",
       "error": "Erreur"
     },
-    "title": "Historique de Téléchargement"
+    "title": "Historique de Téléchargement",
+    "copyShareLink": "Copier le lien de téléchargement"
   },
   "menu": {
     "about": "À propos",
@@ -350,7 +352,8 @@
     "removeFailed": "Échec de la suppression de l'élément",
     "settingsSaved": "Paramètres sauvegardés",
     "urlCopied": "URL copiée dans le presse-papiers",
-    "videoCopied": "Vidéo copiée dans le presse-papiers"
+    "videoCopied": "Vidéo copiée dans le presse-papiers",
+    "shareLinkCopied": "Lien de téléchargement copié dans le presse-papiers"
   },
   "playlist": {
     "badgeLabel": "Liste de lecture",

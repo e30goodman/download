@@ -62,6 +62,11 @@ import { toast } from "sonner";
 import { resolvePlatformLabel } from "../../lib/download-platform";
 import { createBrowserDownloadUrl, orpcClient } from "../../lib/orpc-client";
 import { resolveImageProxyUrl } from "../../lib/remote-image-proxy";
+import {
+	getRowFormatDisplay,
+	inferRowFormatPreset,
+	type RowFormatSelection,
+} from "../../lib/row-format-presets";
 import { buildShareDownloadUrlFromRecord } from "../../lib/share-download-link";
 import { siteConfig } from "../../lib/site-config";
 import { readWebSettings } from "../../lib/web-settings";
@@ -78,7 +83,7 @@ interface DownloadItemProps {
 	onCopyUrl?: (url: string) => void;
 	onFormatChange?: (
 		download: DownloadRecord,
-		format: NonNullable<DownloadRecord["selectedFormat"]>,
+		selection: RowFormatSelection,
 	) => void;
 }
 
@@ -279,8 +284,11 @@ export function DownloadItem({
 		(isBrowserHandoff ? download.handedOffAt : download.completedAt) ??
 		download.startedAt ??
 		download.createdAt;
-	const qualityLabel = getQualityLabel(download);
-	const formatLabelValue = getFormatLabel(download);
+	const rowFormatDisplay = getRowFormatDisplay(download);
+	const qualityLabel = rowFormatDisplay.qualityLabel ?? getQualityLabel(download);
+	const formatLabelValue =
+		rowFormatDisplay.formatLabel ?? getFormatLabel(download);
+	const selectedRowPreset = inferRowFormatPreset(download);
 	const platformLabel = resolvePlatformLabel({
 		channel: download.channel,
 		url: download.url,
@@ -1009,13 +1017,12 @@ export function DownloadItem({
 											<DownloadFormatPicker
 												disabled={!canChangeFormat}
 												formatLabel={formatLabelValue}
-												onFormatSelect={(format) => {
-													onFormatChange?.(download, format);
+												onFormatSelect={(selection) => {
+													onFormatChange?.(download, selection);
 												}}
 												qualityLabel={qualityLabel}
-												selectedFormatId={download.selectedFormat?.formatId}
+												selectedPreset={selectedRowPreset}
 												type={download.type}
-												url={download.url ?? ""}
 											/>
 										) : (
 											<>

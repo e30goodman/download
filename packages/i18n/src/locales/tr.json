@@ -227,7 +227,8 @@
       "subscription": "Abonelik"
     },
     "formatFallbackTitle": "Selected format unavailable",
-    "formatFallbackHint": "Your pick was not deliverable, so VidBee fell back to best available ({{resolved}})."
+    "formatFallbackHint": "Your pick was not deliverable, so VidBee fell back to best available ({{resolved}}).",
+    "chooseFormat": "Biçim seç"
   },
   "error": {
     "title": "Bir sorun oluştu",
@@ -320,7 +321,8 @@
       "completed": "Tamamlandı",
       "error": "Hata"
     },
-    "title": "İndirme Geçmişi"
+    "title": "İndirme Geçmişi",
+    "copyShareLink": "İndirme bağlantısını kopyala"
   },
   "menu": {
     "about": "Hakkında",
@@ -350,7 +352,8 @@
     "removeFailed": "Öğe silinemedi",
     "settingsSaved": "Ayarlar kaydedildi",
     "urlCopied": "URL panoya kopyalandı",
-    "videoCopied": "Video panoya kopyalandı"
+    "videoCopied": "Video panoya kopyalandı",
+    "shareLinkCopied": "İndirme bağlantısı panoya kopyalandı"
   },
   "playlist": {
     "badgeLabel": "Oynatma listesi",

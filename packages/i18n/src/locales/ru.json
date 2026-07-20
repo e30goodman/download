@@ -227,7 +227,8 @@
       "subscription": "Подписка"
     },
     "formatFallbackTitle": "Selected format unavailable",
-    "formatFallbackHint": "Your pick was not deliverable, so VidBee fell back to best available ({{resolved}})."
+    "formatFallbackHint": "Your pick was not deliverable, so VidBee fell back to best available ({{resolved}}).",
+    "chooseFormat": "Выбрать формат"
   },
   "error": {
     "title": "Что-то пошло не так",
@@ -320,7 +321,8 @@
       "completed": "Завершено",
       "error": "Ошибка"
     },
-    "title": "История загрузок"
+    "title": "История загрузок",
+    "copyShareLink": "Копировать ссылку на загрузку"
   },
   "menu": {
     "about": "О программе",
@@ -350,7 +352,8 @@
     "removeFailed": "Не удалось удалить элемент",
     "settingsSaved": "Настройки сохранены",
     "urlCopied": "URL скопирован в буфер обмена",
-    "videoCopied": "Видео скопировано в буфер обмена"
+    "videoCopied": "Видео скопировано в буфер обмена",
+    "shareLinkCopied": "Ссылка на загрузку скопирована"
   },
   "playlist": {
     "badgeLabel": "Плейлист",

@@ -227,7 +227,8 @@
       "subscription": "サブスクリプション"
     },
     "formatFallbackTitle": "Selected format unavailable",
-    "formatFallbackHint": "Your pick was not deliverable, so VidBee fell back to best available ({{resolved}})."
+    "formatFallbackHint": "Your pick was not deliverable, so VidBee fell back to best available ({{resolved}}).",
+    "chooseFormat": "形式を選択"
   },
   "error": {
     "title": "問題が発生しました",
@@ -320,7 +321,8 @@
       "completed": "完了",
       "error": "エラー"
     },
-    "title": "ダウンロード履歴"
+    "title": "ダウンロード履歴",
+    "copyShareLink": "ダウンロードリンクをコピー"
   },
   "menu": {
     "about": "について",
@@ -350,7 +352,8 @@
     "removeFailed": "アイテムの削除に失敗",
     "settingsSaved": "設定が保存されました",
     "urlCopied": "URLがクリップボードにコピーされました",
-    "videoCopied": "ビデオがクリップボードにコピーされました"
+    "videoCopied": "ビデオがクリップボードにコピーされました",
+    "shareLinkCopied": "ダウンロードリンクをクリップボードにコピーしました"
   },
   "playlist": {
     "badgeLabel": "プレイリスト",

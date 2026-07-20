@@ -33,6 +33,10 @@ import {
 import { orpcClient } from "../../lib/orpc-client";
 import { readOrpcDownloadSettings } from "../../lib/orpc-download-settings";
 import type { ShareDownloadParams } from "../../lib/share-download-link";
+import {
+	buildFormatSelectorFromPreset,
+	type RowFormatSelection,
+} from "../../lib/row-format-presets";
 import { siteConfig } from "../../lib/site-config";
 import { buildSingleVideoFormatSelector } from "../../lib/video-format-selector";
 import { PlaylistDownload } from "./playlist-download";
@@ -219,6 +223,38 @@ export function DownloadDialog({
 		[notifyDownloadsChanged, settings, t],
 	);
 
+	const startShareDownloadWithPreset = useCallback(
+		async (
+			targetUrl: string,
+			downloadType: DownloadType,
+			selection: RowFormatSelection,
+		) => {
+			const trimmedUrl = targetUrl.trim();
+			if (!trimmedUrl) {
+				toast.error(t("errors.emptyUrl"));
+				return;
+			}
+
+			try {
+				const presetFormats = buildFormatSelectorFromPreset(selection);
+				await orpcClient.downloads.create({
+					url: trimmedUrl,
+					type: downloadType,
+					format: presetFormats.format,
+					audioFormat: presetFormats.audioFormat,
+					settings: readOrpcDownloadSettings(),
+				});
+
+				toast.success(t("download.oneClickDownloadStarted"));
+				await notifyDownloadsChanged();
+			} catch (startError) {
+				console.error("Failed to start shared download:", startError);
+				toast.error(t("notifications.downloadFailed"));
+			}
+		},
+		[notifyDownloadsChanged, t],
+	);
+
 	const startShareDownloadWithFormat = useCallback(
 		async (
 			targetUrl: string,
@@ -299,7 +335,12 @@ export function DownloadDialog({
 				settings.oneClickDownload || downloadType === "text";
 
 			if (useOneClick) {
-				if (shareRequest.formatId && downloadType !== "text") {
+				if (shareRequest.preset && shareRequest.type) {
+					await startShareDownloadWithPreset(trimmedUrl, shareRequest.type, {
+						type: shareRequest.type,
+						preset: shareRequest.preset,
+					});
+				} else if (shareRequest.formatId && downloadType !== "text") {
 					await startShareDownloadWithFormat(
 						trimmedUrl,
 						downloadType,
@@ -335,6 +376,7 @@ export function DownloadDialog({
 		shareRequest,
 		startOneClickDownload,
 		startShareDownloadWithFormat,
+		startShareDownloadWithPreset,
 	]);
 
 	const handleFetchVideo = useCallback(async () => {

@@ -227,7 +227,8 @@
       "subscription": "订阅"
     },
     "formatFallbackTitle": "所选格式不可用",
-    "formatFallbackHint": "所选格式拿不到流，已自动回退到 {{resolved}}。如需强制使用所选画质，请检查浏览器 cookies 或挑选非大会员档位。"
+    "formatFallbackHint": "所选格式拿不到流，已自动回退到 {{resolved}}。如需强制使用所选画质，请检查浏览器 cookies 或挑选非大会员档位。",
+    "chooseFormat": "选择格式"
   },
   "error": {
     "title": "出了点问题",
@@ -320,7 +321,8 @@
       "completed": "已完成",
       "error": "错误"
     },
-    "title": "下载历史"
+    "title": "下载历史",
+    "copyShareLink": "复制下载链接"
   },
   "menu": {
     "about": "关于",
@@ -350,7 +352,8 @@
     "removeFailed": "移除项目失败",
     "settingsSaved": "设置已保存",
     "urlCopied": "链接已复制到剪贴板",
-    "videoCopied": "视频已复制到剪贴板"
+    "videoCopied": "视频已复制到剪贴板",
+    "shareLinkCopied": "下载链接已复制到剪贴板"
   },
   "playlist": {
     "badgeLabel": "播放列表",

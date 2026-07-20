@@ -562,7 +562,8 @@ export class TextTranscriptionExecutor implements Executor {
         ctx.input.title?.trim() ||
         path.basename(ctx.input.url).slice(0, 80) ||
         'transcript'
-      const fileName = `${sanitizeFilenamePart(titleHint)}.txt`
+      const outputExt = taskOptions.audioFormat?.trim().toLowerCase() === 'md' ? 'md' : 'txt'
+      const fileName = `${sanitizeFilenamePart(titleHint)}.${outputExt}`
       const filePath = path.join(downloadDir, fileName)
       writeFileSync(filePath, `${transcript.trim()}\n`, 'utf8')
       const size = statSync(filePath).size

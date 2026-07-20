@@ -3,6 +3,7 @@ import { Progress } from "@vidbee/ui/components/ui/progress";
 import { ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { RowFormatSelection } from "../../lib/row-format-presets";
 import { DownloadItem } from "./download-item";
 import type { DownloadRecord } from "./types";
 
@@ -20,7 +21,7 @@ interface PlaylistDownloadGroupProps {
 	onCopyUrl?: (url: string) => void;
 	onFormatChange?: (
 		download: DownloadRecord,
-		format: NonNullable<DownloadRecord["selectedFormat"]>,
+		selection: RowFormatSelection,
 	) => void;
 }
 

@@ -1,15 +1,21 @@
 import type { DownloadType } from "@vidbee/downloader-core";
 import type { DownloadRecord } from "../components/download/types";
+import {
+	inferRowFormatPreset,
+	type RowFormatPreset,
+} from "./row-format-presets";
 import { siteConfig } from "./site-config";
 
 export interface ShareDownloadParams {
 	url: string;
 	type?: DownloadType;
+	preset?: RowFormatPreset;
 	formatId?: string;
 }
 
 const SHARE_PARAM_URL = "url";
 const SHARE_PARAM_TYPE = "type";
+const SHARE_PARAM_PRESET = "preset";
 const SHARE_PARAM_FORMAT = "format";
 
 export const getShareBaseUrl = (): string => {
@@ -34,12 +40,16 @@ export const getShareBaseUrl = (): string => {
 export const buildShareDownloadUrl = ({
 	url,
 	type,
+	preset,
 	formatId,
 }: ShareDownloadParams): string => {
 	const shareUrl = new URL(getShareBaseUrl());
 	shareUrl.searchParams.set(SHARE_PARAM_URL, url.trim());
 	if (type) {
 		shareUrl.searchParams.set(SHARE_PARAM_TYPE, type);
+	}
+	if (preset) {
+		shareUrl.searchParams.set(SHARE_PARAM_PRESET, preset);
 	}
 	if (formatId) {
 		shareUrl.searchParams.set(SHARE_PARAM_FORMAT, formatId);
@@ -58,8 +68,29 @@ export const buildShareDownloadUrlFromRecord = (
 	return buildShareDownloadUrl({
 		url,
 		type: download.type,
-		formatId: download.selectedFormat?.formatId,
+		preset: inferRowFormatPreset(download),
 	});
+};
+
+const parsePreset = (
+	value: string | null | undefined,
+): RowFormatPreset | undefined => {
+	if (!value) {
+		return undefined;
+	}
+	if (
+		value === "original" ||
+		value === "1080" ||
+		value === "720" ||
+		value === "360" ||
+		value === "mp3" ||
+		value === "wav" ||
+		value === "txt" ||
+		value === "md"
+	) {
+		return value;
+	}
+	return undefined;
 };
 
 export const parseShareDownloadParams = (
@@ -80,7 +111,8 @@ export const parseShareDownloadParams = (
 		typeParam === "text"
 			? typeParam
 			: undefined;
+	const preset = parsePreset(params.get(SHARE_PARAM_PRESET));
 	const formatId = params.get(SHARE_PARAM_FORMAT)?.trim() || undefined;
 
-	return { url, type, formatId };
+	return { url, type, preset, formatId };
 };
