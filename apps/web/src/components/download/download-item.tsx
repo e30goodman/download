@@ -87,6 +87,7 @@ interface DownloadItemProps {
 		selection: RowFormatSelection,
 	) => void;
 	onTypeChange?: (download: DownloadRecord, type: DownloadRecord["type"]) => void;
+	onStartDownload?: (download: DownloadRecord) => void;
 }
 
 interface MetadataDetail {
@@ -278,6 +279,7 @@ export function DownloadItem({
 	onCopyUrl,
 	onFormatChange,
 	onTypeChange,
+	onStartDownload,
 }: DownloadItemProps) {
 	const { t } = useTranslation();
 	const [isCancelling, setIsCancelling] = useState(false);
@@ -296,7 +298,6 @@ export function DownloadItem({
 		channel: download.channel,
 		url: download.url,
 	});
-	const typeBadgeLabel = getTypeBadgeLabel(download.type, t);
 	const statusIcon = getStatusIcon(download.status);
 	const statusText = getStatusText(download.status, t);
 	const resolvedExtension = resolveDownloadExtension(download);
@@ -596,12 +597,14 @@ export function DownloadItem({
 	const showShareAction = canCopyLink;
 	const canChangeFormat = Boolean(
 		onFormatChange &&
-			!isBrowserHandoff &&
 			!isInProgressStatus &&
 			download.url?.trim(),
 	);
 	const canChangeType = Boolean(
-		onTypeChange && !isBrowserHandoff && !isInProgressStatus && download.url?.trim(),
+		onTypeChange && !isInProgressStatus && download.url?.trim(),
+	);
+	const canStartDownload = Boolean(
+		onStartDownload && isBrowserHandoff && !isInProgressStatus && download.url?.trim(),
 	);
 	const canDeleteRecord = Boolean(onRemove);
 	const showTrashAction = canDeleteRecord && !isInProgressStatus;
@@ -943,25 +946,6 @@ export function DownloadItem({
 										<p className="line-clamp-1 flex-1 font-medium text-sm">
 											{download.title || download.url}
 										</p>
-										{typeBadgeLabel &&
-											(canChangeType ? (
-												<DownloadTypePicker
-													disabled={!canChangeType}
-													onTypeSelect={(type) => {
-														if (type !== download.type) {
-															onTypeChange?.(download, type);
-														}
-													}}
-													selectedType={download.type}
-												/>
-											) : (
-												<Badge
-													className="shrink-0 px-1.5 py-0.5 text-[10px]"
-													variant="secondary"
-												>
-													{typeBadgeLabel}
-												</Badge>
-											))}
 										{isBrowserHandoff && (
 											<Badge
 												className="shrink-0 gap-1 px-1.5 py-0.5 text-[10px]"
@@ -1031,16 +1015,36 @@ export function DownloadItem({
 											</>
 										) : null}
 										{canChangeFormat ? (
-											<DownloadFormatPicker
-												disabled={!canChangeFormat}
-												formatLabel={formatLabelValue}
-												onFormatSelect={(selection) => {
-													onFormatChange?.(download, selection);
-												}}
-												qualityLabel={qualityLabel}
-												selectedPreset={selectedRowPreset}
-												type={download.type}
-											/>
+											<>
+												{canChangeType ? (
+													<DownloadTypePicker
+														disabled={!canChangeType}
+														onTypeSelect={(type) => {
+															if (type !== download.type) {
+																onTypeChange?.(download, type);
+															}
+														}}
+														selectedType={download.type}
+													/>
+												) : (
+													<Badge
+														className="shrink-0 px-1.5 py-0.5 text-[10px]"
+														variant="secondary"
+													>
+														{t(`download.${download.type}`)}
+													</Badge>
+												)}
+												<DownloadFormatPicker
+													disabled={!canChangeFormat}
+													formatLabel={formatLabelValue}
+													onFormatSelect={(selection) => {
+														onFormatChange?.(download, selection);
+													}}
+													qualityLabel={qualityLabel}
+													selectedPreset={selectedRowPreset}
+													type={download.type}
+												/>
+											</>
 										) : (
 											<>
 												{qualityLabel && (
@@ -1106,6 +1110,26 @@ export function DownloadItem({
 											</TooltipTrigger>
 											<TooltipContent>
 												<p>{t("download.retry")}</p>
+											</TooltipContent>
+										</Tooltip>
+									)}
+									{canStartDownload && (
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<Button
+													className="h-8 w-8 shrink-0 rounded-full"
+													onClick={(event) => {
+														event.stopPropagation();
+														onStartDownload?.(download);
+													}}
+													size="icon"
+													variant="ghost"
+												>
+													<Download className="h-4 w-4" />
+												</Button>
+											</TooltipTrigger>
+											<TooltipContent>
+												<p>{t("download.downloadBtn")}</p>
 											</TooltipContent>
 										</Tooltip>
 									)}

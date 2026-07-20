@@ -456,12 +456,28 @@ export function DownloadDialog({
 
 	const handleOneClickFromAddUrl = useCallback(
 		async (trimmedUrl: string) => {
-			await startOneClickDownload(trimmedUrl, {
-				setInputValue: false,
-				clearInput: false,
-			});
+			try {
+				const result = await orpcClient.videoInfo({
+					url: trimmedUrl,
+					settings: readOrpcDownloadSettings(),
+				});
+				addBrowserDownloadRecord(
+					createBrowserHandedOffRecord({
+						filename: `${result.video.title || "download"}.mp4`,
+						thumbnail: result.video.thumbnail,
+						title: result.video.title,
+						type: "video",
+						url: result.video.webpageUrl || trimmedUrl,
+					}),
+				);
+				toast.success(t("download.addedToQueue"));
+				await notifyDownloadsChanged();
+			} catch (error) {
+				console.error("Failed to add URL to queue list:", error);
+				toast.error(t("errors.fetchInfoFailed"));
+			}
 		},
-		[startOneClickDownload],
+		[notifyDownloadsChanged, t],
 	);
 
 	const {
@@ -475,8 +491,7 @@ export function DownloadDialog({
 		setAddUrlValue,
 	} = useAddUrlInteraction({
 		activeTab,
-		isOneClickDownloadEnabled:
-			settings.oneClickDownload || settings.oneClickDownloadType === "text",
+		isOneClickDownloadEnabled: true,
 		isPlaylistBusy: playlistBusy,
 		onEmptyUrl: () => {
 			toast.error(t("errors.emptyUrl"));
@@ -493,21 +508,6 @@ export function DownloadDialog({
 		enabled: open,
 		onTrigger: handleOpenAddUrlPopover,
 	});
-
-	const handleOneClickDownload = useCallback(async () => {
-		await startOneClickDownload(url, { clearInput: true });
-		setOpen(false);
-	}, [startOneClickDownload, url]);
-
-	const quickDownloadConfirmLabel =
-		settings.oneClickDownloadType === "text"
-			? t("download.downloadText")
-			: settings.oneClickDownloadType === "audio"
-				? t("download.downloadAudio")
-				: t("download.downloadVideo");
-
-	const skipFormatPicker =
-		settings.oneClickDownload || settings.oneClickDownloadType === "text";
 
 	const handlePreviewPlaylist = useCallback(async () => {
 		if (!playlistUrl.trim()) {
@@ -794,9 +794,7 @@ export function DownloadDialog({
 				<AddUrlPopover
 					cancelLabel={t("download.cancel")}
 					confirmDisabled={!canConfirmAddUrl}
-					confirmLabel={
-						skipFormatPicker ? quickDownloadConfirmLabel : t("download.fetch")
-					}
+					confirmLabel={t("subscriptions.actions.add")}
 					invalidMessage={
 						hasAddUrlValue && !canConfirmAddUrl
 							? t("errors.invalidUrl")
@@ -893,13 +891,12 @@ export function DownloadDialog({
 							) : (
 								<Button
 									disabled={loading || !url.trim()}
-									onClick={
-										skipFormatPicker ? handleOneClickDownload : handleFetchVideo
-									}
+									onClick={() => {
+										void handleOneClickFromAddUrl(url.trim());
+										setUrl("");
+									}}
 								>
-									{skipFormatPicker
-										? t("download.oneClickDownloadNow")
-										: t("download.startDownload")}
+									{t("subscriptions.actions.add")}
 								</Button>
 							)
 						) : playlistInfo && !playlistPreviewLoading ? (

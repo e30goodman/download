@@ -30,7 +30,7 @@ const AUDIO_PRESET_ORDER: RowAudioPreset[] = ["mp3", "wav"];
 const TEXT_PRESET_ORDER: RowTextPreset[] = ["txt", "md"];
 
 const VIDEO_PRESET_LABELS: Record<RowVideoPreset, string> = {
-	original: "Original",
+	original: "Best",
 	"1080": "1080p",
 	"720": "720p",
 	"360": "360p",

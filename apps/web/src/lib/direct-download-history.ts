@@ -142,7 +142,7 @@ const parseBrowserRecord = (
 		typeof source.id !== "string" ||
 		!BROWSER_RECORD_ID_PATTERN.test(source.id) ||
 		!sanitizedUrl ||
-		!(source.type === "video" || source.type === "audio") ||
+		!(source.type === "video" || source.type === "audio" || source.type === "text") ||
 		source.status !== "handed-off" ||
 		source.entryType !== "browser" ||
 		source.deliveryMode !== "browser" ||

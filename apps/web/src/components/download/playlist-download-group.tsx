@@ -24,6 +24,7 @@ interface PlaylistDownloadGroupProps {
 		selection: RowFormatSelection,
 	) => void;
 	onTypeChange?: (download: DownloadRecord, type: DownloadRecord["type"]) => void;
+	onStartDownload?: (download: DownloadRecord) => void;
 }
 
 const STORAGE_KEY_PREFIX = "playlist_expanded_";
@@ -64,6 +65,7 @@ export function PlaylistDownloadGroup({
 	onCopyUrl,
 	onFormatChange,
 	onTypeChange,
+	onStartDownload,
 }: PlaylistDownloadGroupProps) {
 	const { t } = useTranslation();
 	const [isExpanded, setIsExpanded] = useState(() =>
@@ -200,6 +202,7 @@ export function PlaylistDownloadGroup({
 								onRetry={onRetry}
 								onTypeChange={onTypeChange}
 								onToggleSelect={onToggleSelect}
+								onStartDownload={onStartDownload}
 							/>
 						</div>
 					))}

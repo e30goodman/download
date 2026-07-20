@@ -31,6 +31,8 @@ import {
 import { Trans, useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
+	addBrowserDownloadRecord,
+	createBrowserHandedOffRecord,
 	mergeDownloadRecords,
 	readBrowserDownloadHistory,
 	removeBrowserDownloadRecords,
@@ -49,6 +51,7 @@ import { readWebSettings } from "../../lib/web-settings";
 import {
 	buildFormatSelectorFromPreset,
 	getDefaultRowPresetForType,
+	inferRowFormatPreset,
 	type RowFormatSelection,
 } from "../../lib/row-format-presets";
 import { buildSingleVideoFormatSelector } from "../../lib/video-format-selector";
@@ -92,6 +95,19 @@ const resolveDownloadExtension = (record: DownloadRecord): string => {
 		return savedExt;
 	}
 	return record.type === "audio" ? "mp3" : "mp4";
+};
+
+const getExtensionForPreset = (
+	type: DownloadRecord["type"],
+	preset: string,
+): string => {
+	if (type === "video") {
+		return "mp4";
+	}
+	if (type === "audio") {
+		return preset === "wav" ? "wav" : "mp3";
+	}
+	return preset === "md" ? "md" : "txt";
 };
 
 export const DownloadPage = () => {
@@ -708,11 +724,28 @@ export const DownloadPage = () => {
 		download: DownloadRecord,
 		selection: RowFormatSelection,
 	) => {
-		if (download.entryType === "browser" || !download.url) {
+		if (!download.url) {
 			return;
 		}
 
 		try {
+			if (download.entryType === "browser") {
+				const nextExt = getExtensionForPreset(selection.type, selection.preset);
+				const updatedRecord = createBrowserHandedOffRecord({
+					filename: `${download.title || "download"}.${nextExt}`,
+					handedOffAt: download.handedOffAt,
+					id: download.id,
+					selectedFormat: download.selectedFormat,
+					thumbnail: download.thumbnail,
+					title: download.title,
+					type: selection.type,
+					url: download.url,
+				});
+				addBrowserDownloadRecord(updatedRecord);
+				await refreshData();
+				return;
+			}
+
 			const presetFormats = buildFormatSelectorFromPreset(selection);
 
 			await orpcClient.downloads.create({
@@ -750,11 +783,29 @@ export const DownloadPage = () => {
 		download: DownloadRecord,
 		type: DownloadRecord["type"],
 	) => {
-		if (download.entryType === "browser" || !download.url) {
+		if (!download.url) {
 			return;
 		}
 
 		try {
+			if (download.entryType === "browser") {
+				const defaultPreset = getDefaultRowPresetForType(type);
+				const nextExt = getExtensionForPreset(type, defaultPreset);
+				const updatedRecord = createBrowserHandedOffRecord({
+					filename: `${download.title || "download"}.${nextExt}`,
+					handedOffAt: download.handedOffAt,
+					id: download.id,
+					selectedFormat: download.selectedFormat,
+					thumbnail: download.thumbnail,
+					title: download.title,
+					type,
+					url: download.url,
+				});
+				addBrowserDownloadRecord(updatedRecord);
+				await refreshData();
+				return;
+			}
+
 			const presetFormats = buildFormatSelectorFromPreset({
 				type,
 				preset: getDefaultRowPresetForType(type),
@@ -787,6 +838,35 @@ export const DownloadPage = () => {
 			await refreshData();
 		} catch (error) {
 			console.error("Failed to change download type:", error);
+			toast.error(t("notifications.downloadFailed"));
+		}
+	};
+
+	const handleStartBrowserDownload = async (download: DownloadRecord) => {
+		if (download.entryType !== "browser" || !download.url) {
+			return;
+		}
+		try {
+			const preset = inferRowFormatPreset(download);
+			const presetFormats = buildFormatSelectorFromPreset({
+				type: download.type,
+				preset,
+			});
+
+			await orpcClient.downloads.create({
+				url: download.url,
+				type: download.type,
+				title: download.title,
+				thumbnail: download.thumbnail,
+				format: presetFormats.format,
+				audioFormat: presetFormats.audioFormat,
+				settings: readOrpcDownloadSettings(),
+			});
+			removeBrowserDownloadRecords([download.id]);
+			toast.success(t("download.addedToQueue"));
+			await refreshData();
+		} catch (error) {
+			console.error("Failed to start queued browser download:", error);
 			toast.error(t("notifications.downloadFailed"));
 		}
 	};
@@ -884,7 +964,8 @@ export const DownloadPage = () => {
 												onFormatChange={handleFormatChange}
 												onRemove={handleRemoveHistoryRecord}
 												onRetry={handleRetryDownload}
-											onTypeChange={handleTypeChange}
+												onStartDownload={handleStartBrowserDownload}
+												onTypeChange={handleTypeChange}
 												onToggleSelect={handleToggleSelect}
 											/>
 										);
@@ -905,7 +986,8 @@ export const DownloadPage = () => {
 											onDeletePlaylist={handleRequestDeletePlaylist}
 											onRemove={handleRemoveHistoryRecord}
 											onRetry={handleRetryDownload}
-										onTypeChange={handleTypeChange}
+											onStartDownload={handleStartBrowserDownload}
+											onTypeChange={handleTypeChange}
 											onToggleSelect={handleToggleSelect}
 											records={group.records}
 											selectedIds={selectedIds}
