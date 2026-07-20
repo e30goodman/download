@@ -1075,6 +1075,32 @@ export function DownloadItem({
 									)}
 								</div>
 								<div className="relative z-20 flex shrink-0 flex-wrap items-center justify-end gap-1 pointer-events-auto text-muted-foreground">
+									{isInProgressStatus && (
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<Button
+													aria-label={t("download.cancel")}
+													className="h-8 w-8 shrink-0 rounded-full text-destructive hover:bg-destructive/10 hover:text-destructive"
+													disabled={isCancelling || !onCancel}
+													onClick={(event) => {
+														event.stopPropagation();
+														void handleCancel();
+													}}
+													size="icon"
+													variant="ghost"
+												>
+													{isCancelling ? (
+														<Loader2 className="h-4 w-4 animate-spin" />
+													) : (
+														<X className="h-4 w-4" />
+													)}
+												</Button>
+											</TooltipTrigger>
+											<TooltipContent>
+												<p>{t("download.cancel")}</p>
+											</TooltipContent>
+										</Tooltip>
+									)}
 									{siteConfig.isPublicSite &&
 										isCompletedStatus &&
 										!isBrowserHandoff && (
@@ -1214,32 +1240,6 @@ export function DownloadItem({
 											</TooltipTrigger>
 											<TooltipContent>
 												<p>{t("history.deleteRecord")}</p>
-											</TooltipContent>
-										</Tooltip>
-									)}
-									{isInProgressStatus && (
-										<Tooltip>
-											<TooltipTrigger asChild>
-												<Button
-													aria-label={t("download.cancel")}
-													className="h-8 w-8 shrink-0 rounded-full"
-													disabled={isCancelling}
-													onClick={(event) => {
-														event.stopPropagation();
-														void handleCancel();
-													}}
-													size="icon"
-													variant="ghost"
-												>
-													{isCancelling ? (
-														<Loader2 className="h-4 w-4 animate-spin" />
-													) : (
-														<X className="h-4 w-4" />
-													)}
-												</Button>
-											</TooltipTrigger>
-											<TooltipContent>
-												<p>{t("download.cancel")}</p>
 											</TooltipContent>
 										</Tooltip>
 									)}

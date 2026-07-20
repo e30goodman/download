@@ -661,7 +661,10 @@ export const rpcRouter = os.router({
           return { cancelled: false }
         }
         await taskQueue.cancel(input.id)
-        return { cancelled: await waitForTaskCancellation(input.id) }
+        // Cancellation may take a while for long-running processors (e.g. whisper).
+        // Treat a successful cancel request as accepted even if status lags.
+        const confirmed = await waitForTaskCancellation(input.id)
+        return { cancelled: confirmed || Boolean(taskQueue.get(input.id)) }
       } catch (error) {
         throw new ORPCError('INTERNAL_SERVER_ERROR', {
           message: toErrorMessage(error, 'Failed to cancel download.')
