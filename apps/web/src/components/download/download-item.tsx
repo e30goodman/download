@@ -930,10 +930,10 @@ export function DownloadItem({
 							/>
 						</div>
 
-						<div className="min-w-0 max-w-full flex-1 overflow-hidden">
-							<div className="flex h-14 w-full flex-col justify-center gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
-								<div className="min-w-0 max-w-full flex-1 space-y-1.5 overflow-hidden">
-									<div className="flex w-full min-w-0 flex-wrap items-center gap-1.5 overflow-hidden">
+						<div className="min-w-0 max-w-full flex-1">
+							<div className="flex min-h-14 w-full flex-col justify-center gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-2">
+								<div className="min-w-0 max-w-full flex-1 space-y-1.5">
+									<div className="flex w-full min-w-0 flex-wrap items-center gap-1.5">
 										<p className="line-clamp-1 flex-1 font-medium text-sm">
 											{download.title || download.url}
 										</p>
@@ -996,58 +996,6 @@ export function DownloadItem({
 												</span>
 											</>
 										) : null}
-										{canChangeFormat ? (
-											<>
-												{canChangeType ? (
-													<DownloadTypePicker
-														disabled={!canChangeType}
-														onTypeSelect={(type) => {
-															if (type !== download.type) {
-																onTypeChange?.(download, type);
-															}
-														}}
-														selectedType={download.type}
-													/>
-												) : (
-													<Badge
-														className="shrink-0 px-1.5 py-0.5 text-[10px]"
-														variant="secondary"
-													>
-														{t(`download.${download.type}`)}
-													</Badge>
-												)}
-												<DownloadFormatPicker
-													disabled={!canChangeFormat}
-													formatLabel={formatLabelValue}
-													onContainerSelect={(container) => {
-														onContainerChange?.(download, container);
-													}}
-													onFormatSelect={(selection) => {
-														onFormatChange?.(download, selection);
-													}}
-													qualityLabel={qualityLabel}
-													selectedContainer={selectedRowContainer}
-													selectedPreset={selectedRowPreset}
-													type={download.type}
-												/>
-											</>
-										) : (
-											<>
-												{qualityLabel && (
-													<Badge className="shrink-0 px-1.5 py-0 text-[10px]">
-														{qualityLabel}
-													</Badge>
-												)}
-												{formatLabelValue && (
-													<Badge
-														className="shrink-0 px-1.5 py-0 text-[10px]"
-														variant="secondary"
-													>
-														{formatLabelValue}
-													</Badge>
-												)}
-											</>
-										)}
 										{inlineFileSize && (
 											<>
 												{renderMetadataSeparator()}
@@ -1055,6 +1003,76 @@ export function DownloadItem({
 											</>
 										)}
 									</div>
+									{(canChangeFormat || qualityLabel || formatLabelValue) && (
+										<div className="relative z-30 flex w-full flex-wrap items-center gap-1.5 pointer-events-auto">
+											{canChangeFormat ? (
+												<>
+													{canChangeType ? (
+														<DownloadTypePicker
+															disabled={!canChangeType}
+															onTypeSelect={(type) => {
+																if (type !== download.type) {
+																	onTypeChange?.(download, type);
+																}
+															}}
+															selectedType={download.type}
+														/>
+													) : (
+														<Badge
+															className="shrink-0 px-1.5 py-0.5 text-[10px]"
+															variant="secondary"
+														>
+															{t(`download.${download.type}`)}
+														</Badge>
+													)}
+													<DownloadFormatPicker
+														disabled={!canChangeFormat}
+														formatLabel={
+															formatLabelValue ??
+															(download.type === "video" ? "MP4" : undefined)
+														}
+														onContainerSelect={(container) => {
+															onContainerChange?.(download, container);
+														}}
+														onFormatSelect={(selection) => {
+															onFormatChange?.(download, selection);
+														}}
+														qualityLabel={
+															qualityLabel ??
+															(download.type === "video"
+																? "Best quality"
+																: undefined)
+														}
+														selectedContainer={selectedRowContainer}
+														selectedPreset={selectedRowPreset}
+														type={download.type}
+													/>
+												</>
+											) : (
+												<>
+													<Badge
+														className="shrink-0 px-1.5 py-0.5 text-[10px]"
+														variant="secondary"
+													>
+														{t(`download.${download.type}`)}
+													</Badge>
+													{qualityLabel && (
+														<Badge className="shrink-0 px-1.5 py-0 text-[10px]">
+															{qualityLabel}
+														</Badge>
+													)}
+													{formatLabelValue && (
+														<Badge
+															className="shrink-0 px-1.5 py-0 text-[10px]"
+															variant="secondary"
+														>
+															{formatLabelValue}
+														</Badge>
+													)}
+												</>
+											)}
+										</div>
+									)}
 								</div>
 								<div className="relative z-20 flex shrink-0 flex-wrap items-center justify-end gap-1 pointer-events-auto text-muted-foreground">
 									{siteConfig.isPublicSite &&

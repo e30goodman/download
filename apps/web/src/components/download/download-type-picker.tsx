@@ -29,21 +29,24 @@ export const DownloadTypePicker = ({
 		<Popover onOpenChange={setOpen} open={open}>
 			<PopoverTrigger asChild>
 				<button
-					className="inline-flex items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					className="inline-flex min-h-8 items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 					disabled={disabled}
 					onClick={(event) => event.stopPropagation()}
 					onKeyDown={(event) => event.stopPropagation()}
+					onPointerDown={(event) => event.stopPropagation()}
 					type="button"
 				>
-					<Badge className="shrink-0 px-1.5 py-0.5 text-[10px]" variant="secondary">
+					<Badge className="shrink-0 px-2 py-0.5 text-[11px]" variant="secondary">
 						{t(`download.${selectedType}`)}
 					</Badge>
 				</button>
 			</PopoverTrigger>
 			<PopoverContent
 				align="start"
-				className="w-48 p-2"
+				className="z-50 w-48 p-2"
+				collisionPadding={12}
 				onClick={(event) => event.stopPropagation()}
+				onOpenAutoFocus={(event) => event.preventDefault()}
 			>
 				<div className="space-y-2">
 					<p className="px-1 font-medium text-sm">{t("download.chooseType")}</p>
