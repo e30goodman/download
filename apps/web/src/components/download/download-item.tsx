@@ -59,6 +59,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { resolvePlatformLabel } from "../../lib/download-platform";
+import { triggerBrowserDownload } from "../../lib/direct-download";
 import { createBrowserDownloadUrl, orpcClient } from "../../lib/orpc-client";
 import { resolveImageProxyUrl } from "../../lib/remote-image-proxy";
 import {
@@ -468,7 +469,10 @@ export function DownloadItem({
 
 	const handleOpenFile = async () => {
 		if (siteConfig.isPublicSite) {
-			window.location.assign(createBrowserDownloadUrl(download.id));
+			triggerBrowserDownload(
+				createBrowserDownloadUrl(download.id),
+				download.savedFileName?.trim() || download.title || "download",
+			);
 			return;
 		}
 

@@ -37,9 +37,13 @@ import {
 	readBrowserDownloadHistory,
 	removeBrowserDownloadRecords,
 } from "../../lib/direct-download-history";
+import { ensureResolvedApiUrl } from "../../lib/api-endpoint";
+import { triggerBrowserDownload } from "../../lib/direct-download";
 import {
 	createBrowserBatchDownloadUrl,
-	eventsUrl,
+	createBrowserDownloadUrl,
+	getApiUrl,
+	getEventsUrl,
 	orpcClient,
 } from "../../lib/orpc-client";
 import {
@@ -47,6 +51,8 @@ import {
 	type ShareDownloadParams,
 } from "../../lib/share-download-link";
 import { readOrpcDownloadSettings } from "../../lib/orpc-download-settings";
+import { siteConfig } from "../../lib/site-config";
+import { waitForServerDownload } from "../../lib/wait-for-server-download";
 import { readWebSettings } from "../../lib/web-settings";
 import {
 	buildFormatSelectorFromPreset,
@@ -80,6 +86,7 @@ type ConfirmAction =
 	  };
 
 const POLL_INTERVAL_MS = 2000;
+const API_FAILURE_THRESHOLD = 3;
 
 const isEditableTarget = (target: EventTarget | null): boolean => {
 	if (!(target && target instanceof HTMLElement)) {
@@ -133,11 +140,17 @@ export const DownloadPage = () => {
 				: parseShareDownloadParams(window.location.search),
 	);
 	const refreshGenerationRef = useRef(0);
+	const apiFailureCountRef = useRef(0);
+	const sseFailureCountRef = useRef(0);
+	const startingBrowserDownloadIdsRef = useRef(new Set<string>());
 
 	const refreshData = useCallback(async () => {
 		const generation = refreshGenerationRef.current + 1;
 		refreshGenerationRef.current = generation;
 		try {
+			if (siteConfig.isPublicSite) {
+				await ensureResolvedApiUrl(getApiUrl());
+			}
 			const [downloadsResult, historyResult] = await Promise.all([
 				orpcClient.downloads.list(),
 				orpcClient.history.list(),
@@ -164,12 +177,15 @@ export const DownloadPage = () => {
 					readBrowserDownloadHistory(),
 				),
 			);
+			apiFailureCountRef.current = 0;
+			sseFailureCountRef.current = 0;
 			setIsApiReachable(true);
 			setApiConnectionMessage("");
 		} catch (error) {
 			if (generation !== refreshGenerationRef.current) {
 				return;
 			}
+			apiFailureCountRef.current += 1;
 			setAllRecords((current) =>
 				mergeDownloadRecords(
 					current.filter(
@@ -179,7 +195,6 @@ export const DownloadPage = () => {
 					readBrowserDownloadHistory(),
 				),
 			);
-			setIsApiReachable(false);
 			const rawMessage =
 				error instanceof Error ? error.message : t("errors.networkError");
 			const message =
@@ -188,7 +203,10 @@ export const DownloadPage = () => {
 				)
 					? t("errors.apiUnreachable")
 					: rawMessage;
-			setApiConnectionMessage(message);
+			if (apiFailureCountRef.current >= API_FAILURE_THRESHOLD) {
+				setIsApiReachable(false);
+				setApiConnectionMessage(message);
+			}
 		}
 	}, [t]);
 
@@ -208,12 +226,18 @@ export const DownloadPage = () => {
 			return;
 		}
 
-		const source = new EventSource(eventsUrl);
+		const source = new EventSource(getEventsUrl());
 		const onChanged = () => {
+			sseFailureCountRef.current = 0;
 			void refreshData();
 		};
 		const onError = () => {
+			sseFailureCountRef.current += 1;
+			if (sseFailureCountRef.current < API_FAILURE_THRESHOLD) {
+				return;
+			}
 			setIsApiReachable(false);
+			setApiConnectionMessage(t("errors.apiUnreachable"));
 			source.close();
 		};
 
@@ -227,7 +251,7 @@ export const DownloadPage = () => {
 			source.removeEventListener("error", onError);
 			source.close();
 		};
-	}, [isApiReachable, refreshData]);
+	}, [isApiReachable, refreshData, t]);
 
 	const historyRecords = useMemo(
 		() => allRecords.filter((record) => record.entryType !== "active"),
@@ -861,6 +885,11 @@ export const DownloadPage = () => {
 		if (download.entryType !== "browser" || !download.url) {
 			return;
 		}
+		if (startingBrowserDownloadIdsRef.current.has(download.id)) {
+			return;
+		}
+		startingBrowserDownloadIdsRef.current.add(download.id);
+
 		try {
 			const preset = inferRowFormatPreset(download);
 			const container =
@@ -872,7 +901,7 @@ export const DownloadPage = () => {
 				preset,
 			});
 
-			await orpcClient.downloads.create({
+			const created = await orpcClient.downloads.create({
 				url: download.url,
 				type: download.type,
 				title: download.title,
@@ -882,7 +911,34 @@ export const DownloadPage = () => {
 				containerFormat: container,
 				settings: readOrpcDownloadSettings(),
 			});
+			const taskId = created.download.id;
+			const filename =
+				download.savedFileName?.trim() ||
+				`${download.title || "download"}`;
+
 			removeBrowserDownloadRecords([download.id]);
+			await refreshData();
+
+			const waitResult = await waitForServerDownload(taskId);
+
+			if (waitResult === "completed") {
+				if (siteConfig.isPublicSite) {
+					triggerBrowserDownload(
+						createBrowserDownloadUrl(taskId),
+						filename,
+					);
+				}
+				toast.success(t("notifications.downloadCompleted"));
+				await refreshData();
+				return;
+			}
+
+			if (waitResult === "error" || waitResult === "cancelled") {
+				toast.error(t("notifications.downloadFailed"));
+				await refreshData();
+				return;
+			}
+
 			toast.success(t("download.addedToQueue"));
 			await refreshData();
 		} catch (error) {
@@ -896,6 +952,8 @@ export const DownloadPage = () => {
 					? t("errors.apiUnreachable")
 					: t("notifications.downloadFailed"),
 			);
+		} finally {
+			startingBrowserDownloadIdsRef.current.delete(download.id);
 		}
 	};
 
