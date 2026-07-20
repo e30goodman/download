@@ -8,7 +8,7 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { siteConfig } from "../../lib/site-config";
 
-type AppPage = "about" | "download" | "settings";
+type AppPage = "about" | "download" | "settings" | "supported-sites";
 
 interface AppShellProps {
 	children: ReactNode;
@@ -30,6 +30,15 @@ export const AppShell = ({ children, page }: AppShellProps) => {
 				void navigate({ to: "/" });
 			},
 		},
+		{
+			id: "supported-sites",
+			active: page === "supported-sites",
+			icon: appSidebarIcons.supportedSites,
+			label: t("menu.supportedSites"),
+			onClick: () => {
+				void navigate({ to: "/supported-sites" });
+			},
+		},
 	];
 	if (!siteConfig.isPublicSite) {
 		items.push({
@@ -37,18 +46,6 @@ export const AppShell = ({ children, page }: AppShellProps) => {
 			disabled: true,
 			icon: appSidebarIcons.subscriptions,
 			label: t("menu.rss"),
-		});
-		items.push({
-			id: "supported-sites",
-			icon: appSidebarIcons.supportedSites,
-			label: t("menu.supportedSites"),
-			onClick: () => {
-				window.open(
-					"https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md",
-					"_blank",
-					"noopener,noreferrer",
-				);
-			},
 		});
 	}
 

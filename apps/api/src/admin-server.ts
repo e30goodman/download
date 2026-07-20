@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import Fastify from 'fastify'
-import { getMonitoringSnapshot } from './lib/monitoring'
+import { clearAllVisitors, dismissVisitor, getMonitoringSnapshot } from './lib/monitoring'
 
 const isAllowedHost = (host: string | undefined): boolean => {
   const normalizedHost = host?.trim().toLowerCase() ?? ''
@@ -40,6 +40,12 @@ const buildDashboardHtml = (nonce: string): string => `<!doctype html>
     .panel{border-radius:20px;padding:18px;margin-top:12px;overflow:hidden}
     .panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:15px}
     .pill{padding:5px 9px;border-radius:999px;background:#192235;color:#9fb0ca;font-size:11px}
+    .toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+    .filter-group{display:inline-flex;gap:6px}
+    .filter-btn,.action-btn{border:1px solid #263148;border-radius:999px;background:#101622;color:#b9c4d8;font-size:11px;padding:6px 10px;cursor:pointer}
+    .filter-btn.active{border-color:#3f6f9d;background:#152338;color:#eef4ff}
+    .action-btn.danger{border-color:#5a2630;color:#ff9dac}
+    .action-btn:disabled{opacity:.45;cursor:not-allowed}
     .queue{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
     .queue div{padding:12px;border-radius:13px;background:#0a0f19;border:1px solid #1b2536}
     .queue strong{display:block;font-size:20px}
@@ -52,6 +58,7 @@ const buildDashboardHtml = (nonce: string): string => `<!doctype html>
     .state{display:inline-flex;align-items:center;gap:7px}
     .state:before{content:"";width:7px;height:7px;border-radius:50%;background:#59667a}
     .state.active:before,.state.completed:before{background:#38d996}
+    .state.new:before{background:#c4a035}
     .state.running:before,.state.processing:before,.state.queued:before{background:#55a7ff}
     .state.failed:before,.state.error:before{background:#ff667a}
     .event-list{display:grid;gap:8px}
@@ -73,7 +80,7 @@ const buildDashboardHtml = (nonce: string): string => `<!doctype html>
     <div class="error-box" id="error-box"></div>
     <section class="grid" aria-label="Основные показатели">
       <article class="card"><div class="label">Активны сейчас</div><div class="value" id="active-visitors">—</div><div class="hint">за последние 5 минут</div></article>
-      <article class="card"><div class="label">Запросы</div><div class="value" id="requests">—</div><div class="hint">с запуска API</div></article>
+      <article class="card"><div class="label">Запросы</div><div class="value" id="requests">—</div><div class="hint">без polling и мониторинга</div></article>
       <article class="card"><div class="label">Загрузки сегодня</div><div class="value" id="completed">—</div><div class="hint" id="downloaded-bytes">—</div></article>
       <article class="card"><div class="label">Ошибки сегодня</div><div class="value" id="failed">—</div><div class="hint" id="http-errors">—</div></article>
       <article class="card"><div class="label">Память API</div><div class="value" id="memory">—</div><div class="hint">RSS процесса</div></article>
@@ -89,9 +96,21 @@ const buildDashboardHtml = (nonce: string): string => `<!doctype html>
       </div>
     </section>
     <section class="panel">
-      <div class="panel-head"><h2>Посетители</h2><span class="pill" id="unique-visitors">—</span></div>
+      <div class="panel-head">
+        <h2>Посетители</h2>
+        <div class="toolbar">
+          <div class="filter-group" role="group" aria-label="Фильтр посетителей">
+            <button type="button" class="filter-btn active" data-visitor-filter="active">Активные</button>
+            <button type="button" class="filter-btn" data-visitor-filter="new">Новые</button>
+            <button type="button" class="filter-btn" data-visitor-filter="inactive">Неактивные</button>
+            <button type="button" class="filter-btn" data-visitor-filter="all">Все</button>
+          </div>
+          <span class="pill" id="unique-visitors">—</span>
+          <button type="button" class="action-btn danger" id="clear-visitors">Очистить всех</button>
+        </div>
+      </div>
       <div class="table-wrap"><table>
-        <thead><tr><th>Статус</th><th>IP</th><th>Страна</th><th>Сессия</th><th>Последняя активность</th><th>Запросы</th><th>Устройство</th></tr></thead>
+        <thead><tr><th>Статус</th><th>IP</th><th>Страна</th><th>Сессия</th><th>Первый визит</th><th>Последняя активность</th><th>Запросы</th><th>Устройство</th><th></th></tr></thead>
         <tbody id="visitors-body"></tbody>
       </table></div>
       <div class="empty" id="visitors-empty">Посетителей пока нет</div>
@@ -135,18 +154,86 @@ const buildDashboardHtml = (nonce: string): string => `<!doctype html>
       return cell;
     };
     const statusLabels = { queued:"В очереди",running:"Запуск",processing:"Скачивается",paused:"Пауза","retry-scheduled":"Повтор",completed:"Готово",failed:"Ошибка",cancelled:"Отменено" };
+    let visitorFilter = "active";
+    let latestVisitors = [];
+    const filterVisitors = (visitors) => {
+      if (visitorFilter === "active") return visitors.filter((visitor) => visitor.active);
+      if (visitorFilter === "new") {
+        return visitors
+          .filter((visitor) => visitor.isNew)
+          .sort((left, right) => right.firstSeen - left.firstSeen);
+      }
+      if (visitorFilter === "inactive") {
+        return visitors.filter((visitor) => !visitor.active && !visitor.isNew);
+      }
+      return visitors;
+    };
+    const formatVisitorStatus = (visitor) => {
+      if (visitor.isNew) {
+        if (visitor.currentRequests > 0) return "Новый · подключён";
+        if (visitor.active) return "Новый · недавно";
+        return "Новый";
+      }
+      if (visitor.currentRequests > 0) return "Подключён";
+      if (visitor.active) return "Недавно";
+      return "Неактивен";
+    };
+    const setVisitorFilter = (nextFilter) => {
+      visitorFilter = nextFilter;
+      for (const button of document.querySelectorAll("[data-visitor-filter]")) {
+        button.classList.toggle("active", button.getAttribute("data-visitor-filter") === nextFilter);
+      }
+      renderVisitors(latestVisitors);
+    };
+    const dismissVisitor = async (key) => {
+      const response = await fetch("/api/visitors?key=" + encodeURIComponent(key), { method: "DELETE" });
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      latestVisitors = latestVisitors.filter((visitor) => visitor.key !== key);
+      renderVisitors(latestVisitors);
+    };
+    const clearVisitors = async () => {
+      if (!window.confirm("Удалить все записи о посетителях?")) return;
+      const response = await fetch("/api/visitors", { method: "DELETE" });
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      latestVisitors = [];
+      renderVisitors(latestVisitors);
+    };
     const renderVisitors = (visitors) => {
+      latestVisitors = visitors;
+      const visibleVisitors = filterVisitors(visitors);
       const body = byId("visitors-body");
       body.replaceChildren();
-      byId("visitors-empty").style.display = visitors.length ? "none" : "block";
-      for (const visitor of visitors) {
+      byId("visitors-empty").style.display = visibleVisitors.length ? "none" : "block";
+      byId("visitors-empty").textContent = visitorFilter === "active"
+        ? "Активных посетителей сейчас нет"
+        : visitorFilter === "new"
+          ? "Новых посетителей пока нет"
+        : visitorFilter === "inactive"
+          ? "Неактивных посетителей нет"
+          : "Посетителей пока нет";
+      for (const visitor of visibleVisitors) {
         const row = document.createElement("tr");
         const stateCell = document.createElement("td");
         const state = document.createElement("span");
-        state.className = "state" + (visitor.active ? " active" : "");
-        state.textContent = visitor.currentRequests > 0 ? "Подключён" : visitor.active ? "Недавно" : "Неактивен";
+        state.className = "state" + (visitor.isNew ? " new" : visitor.active ? " active" : "");
+        state.textContent = formatVisitorStatus(visitor);
         stateCell.append(state);
-        row.append(stateCell, createCell(visitor.ip), createCell(visitor.country), createCell(visitor.session), createCell(formatTime(visitor.lastSeen)), createCell(visitor.requests), createCell(visitor.userAgent, "muted"));
+        const actionCell = document.createElement("td");
+        const removeButton = document.createElement("button");
+        removeButton.type = "button";
+        removeButton.className = "action-btn danger";
+        removeButton.textContent = "Удалить";
+        removeButton.addEventListener("click", () => {
+          removeButton.disabled = true;
+          dismissVisitor(visitor.key).catch((error) => {
+            removeButton.disabled = false;
+            const box = byId("error-box");
+            box.textContent = "Не удалось удалить посетителя: " + (error instanceof Error ? error.message : "неизвестная ошибка");
+            box.style.display = "block";
+          });
+        });
+        actionCell.append(removeButton);
+        row.append(stateCell, createCell(visitor.ip), createCell(visitor.country), createCell(visitor.session), createCell(formatTime(visitor.firstSeen)), createCell(formatTime(visitor.lastSeen)), createCell(visitor.requests), createCell(visitor.userAgent, "muted"), actionCell);
         body.append(row);
       }
     };
@@ -198,7 +285,7 @@ const buildDashboardHtml = (nonce: string): string => `<!doctype html>
       setText("queue-completed", data.queue.byStatus.completed);
       setText("queue-failed", data.queue.byStatus.failed);
       setText("latency", "средний ответ " + Math.round(data.traffic.averageLatencyMs) + " мс");
-      setText("unique-visitors", data.traffic.uniqueVisitors + " с запуска");
+      setText("unique-visitors", data.traffic.newVisitors + " новых · " + data.traffic.activeVisitors + " активных · " + data.traffic.uniqueVisitors + " всего");
       setText("status-text", "Работает · обновлено " + formatTime(data.generatedAt));
       byId("status-dot").className = "dot";
       byId("error-box").style.display = "none";
@@ -219,6 +306,18 @@ const buildDashboardHtml = (nonce: string): string => `<!doctype html>
         box.style.display = "block";
       }
     };
+    for (const button of document.querySelectorAll("[data-visitor-filter]")) {
+      button.addEventListener("click", () => {
+        setVisitorFilter(button.getAttribute("data-visitor-filter"));
+      });
+    }
+    byId("clear-visitors").addEventListener("click", () => {
+      clearVisitors().catch((error) => {
+        const box = byId("error-box");
+        box.textContent = "Не удалось очистить посетителей: " + (error instanceof Error ? error.message : "неизвестная ошибка");
+        box.style.display = "block";
+      });
+    });
     void refresh();
     window.setInterval(refresh, 2000);
   </script>
@@ -244,6 +343,16 @@ export const createAdminServer = () => {
 
   admin.get('/health', async () => ({ ok: true }))
   admin.get('/api/snapshot', async () => getMonitoringSnapshot())
+  admin.delete<{ Querystring: { key?: string } }>('/api/visitors', async (request, reply) => {
+    const key = request.query.key?.trim()
+    if (!key) {
+      return { ok: true, removed: clearAllVisitors() }
+    }
+    if (!dismissVisitor(key)) {
+      return reply.code(404).send({ message: 'Visitor not found.' })
+    }
+    return { ok: true, removed: 1 }
+  })
   admin.get('/favicon.ico', async (_request, reply) => reply.code(204).send())
   admin.get('/', async (_request, reply) => {
     const nonce = randomBytes(18).toString('base64')

@@ -46,6 +46,7 @@ import {
 	Loader2,
 	RotateCw,
 	Send,
+	Share2,
 	Trash2,
 	X,
 } from "lucide-react";
@@ -58,6 +59,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { resolvePlatformLabel } from "../../lib/download-platform";
 import { createBrowserDownloadUrl, orpcClient } from "../../lib/orpc-client";
 import { resolveImageProxyUrl } from "../../lib/remote-image-proxy";
 import { siteConfig } from "../../lib/site-config";
@@ -237,6 +239,22 @@ const resolveDownloadExtension = (download: DownloadRecord): string => {
 			: "mp4";
 };
 
+const getTypeBadgeLabel = (
+	type: DownloadRecord["type"],
+	t: (key: string) => string,
+): string | null => {
+	switch (type) {
+		case "video":
+			return t("download.video");
+		case "audio":
+			return t("download.audio");
+		case "text":
+			return t("download.text");
+		default:
+			return null;
+	}
+};
+
 export function DownloadItem({
 	download,
 	isSelected = false,
@@ -255,6 +273,12 @@ export function DownloadItem({
 		download.startedAt ??
 		download.createdAt;
 	const qualityLabel = getQualityLabel(download);
+	const formatLabelValue = getFormatLabel(download);
+	const platformLabel = resolvePlatformLabel({
+		channel: download.channel,
+		url: download.url,
+	});
+	const typeBadgeLabel = getTypeBadgeLabel(download.type, t);
 	const statusIcon = getStatusIcon(download.status);
 	const statusText = getStatusText(download.status, t);
 	const resolvedExtension = resolveDownloadExtension(download);
@@ -550,8 +574,17 @@ export function DownloadItem({
 		!siteConfig.isPublicSite &&
 		isCompletedStatus &&
 		fileExists;
+	const showShareAction = canCopyLink;
 	const canDeleteRecord = Boolean(onRemove);
+	const showTrashAction = canDeleteRecord && !isInProgressStatus;
+	const showFolderAction =
+		showOpenFolderAction && !isBrowserHandoff && isCompletedStatus;
+
 	const isSelectedHistory = isHistory && Boolean(onToggleSelect) && isSelected;
+
+	const renderMetadataSeparator = () => (
+		<span className="shrink-0 text-muted-foreground/60">•</span>
+	);
 
 	const sourceDisplay =
 		download.uploader &&
@@ -599,7 +632,6 @@ export function DownloadItem({
 		});
 	}
 
-	const formatLabelValue = getFormatLabel(download);
 	if (formatLabelValue) {
 		metadataDetails.push({
 			label: t("download.metadata.format"),
@@ -883,20 +915,12 @@ export function DownloadItem({
 										<p className="line-clamp-1 flex-1 font-medium text-sm">
 											{download.title || download.url}
 										</p>
-										{download.type === "audio" && (
+										{typeBadgeLabel && (
 											<Badge
 												className="shrink-0 px-1.5 py-0.5 text-[10px]"
 												variant="secondary"
 											>
-												{t("download.audio")}
-											</Badge>
-										)}
-										{download.type === "text" && (
-											<Badge
-												className="shrink-0 px-1.5 py-0.5 text-[10px]"
-												variant="secondary"
-											>
-												{t("download.text")}
+												{typeBadgeLabel}
 											</Badge>
 										)}
 										{isBrowserHandoff && (
@@ -911,16 +935,14 @@ export function DownloadItem({
 									</div>
 									<div className="flex w-full flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
 										{statusIcon && (
-											<Tooltip>
-												<TooltipTrigger asChild>
-													<div className="flex shrink-0 items-center">
-														{statusIcon}
-													</div>
-												</TooltipTrigger>
-												<TooltipContent>
-													<p>{statusText}</p>
-												</TooltipContent>
-											</Tooltip>
+											<div className="flex shrink-0 items-center gap-1">
+												{statusIcon}
+												{statusText ? (
+													<span className="font-medium text-foreground/80">
+														{statusText}
+													</span>
+												) : null}
+											</div>
 										)}
 										{isInProgressStatus && (
 											<div className="flex min-w-0 items-center gap-2">
@@ -947,23 +969,44 @@ export function DownloadItem({
 											</div>
 										)}
 										{timestamp && (
-											<span className="shrink-0 truncate">
-												{formatDateShort(timestamp)}
-											</span>
-										)}
-										{qualityLabel && (
 											<>
-												<span className="shrink-0 text-muted-foreground/60">
-													•
+												{(statusIcon || isInProgressStatus) &&
+													renderMetadataSeparator()}
+												<span className="shrink-0 truncate">
+													{formatDateShort(timestamp)}
 												</span>
-												<span className="shrink-0">{qualityLabel}</span>
 											</>
+										)}
+										{platformLabel && (
+											<>
+												{renderMetadataSeparator()}
+												<span className="shrink-0">{platformLabel}</span>
+											</>
+										)}
+										{download.duration ? (
+											<>
+												{renderMetadataSeparator()}
+												<span className="shrink-0">
+													{formatDuration(download.duration)}
+												</span>
+											</>
+										) : null}
+										{qualityLabel && (
+											<Badge className="shrink-0 px-1.5 py-0 text-[10px]">
+												{qualityLabel}
+											</Badge>
+										)}
+										{formatLabelValue && (
+											<Badge
+												className="shrink-0 px-1.5 py-0 text-[10px]"
+												variant="secondary"
+											>
+												{formatLabelValue}
+											</Badge>
 										)}
 										{inlineFileSize && (
 											<>
-												<span className="shrink-0 text-muted-foreground/60">
-													•
-												</span>
+												{renderMetadataSeparator()}
 												<span className="shrink-0">{inlineFileSize}</span>
 											</>
 										)}
@@ -973,75 +1016,150 @@ export function DownloadItem({
 									{siteConfig.isPublicSite &&
 										isCompletedStatus &&
 										!isBrowserHandoff && (
-											<Button
-												className="gap-2 rounded-full"
-												onClick={(event) => {
-													event.stopPropagation();
-													void handleOpenFile();
-												}}
-												size="sm"
-											>
-												<Download className="h-4 w-4" />
-												{t("menu.download")}
-											</Button>
+											<Tooltip>
+												<TooltipTrigger asChild>
+													<Button
+														className="h-8 w-8 shrink-0 rounded-full"
+														onClick={(event) => {
+															event.stopPropagation();
+															void handleOpenFile();
+														}}
+														size="icon"
+														variant="ghost"
+													>
+														<Download className="h-4 w-4" />
+													</Button>
+												</TooltipTrigger>
+												<TooltipContent>
+													<p>{t("menu.download")}</p>
+												</TooltipContent>
+											</Tooltip>
 										)}
 									{canRetry && (
-										<Button
-											className="h-8 w-8 shrink-0 rounded-full"
-											onClick={(event) => {
-												event.stopPropagation();
-												handleRetryDownload();
-											}}
-											size="icon"
-											variant="ghost"
-										>
-											<RotateCw className="h-4 w-4" />
-										</Button>
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<Button
+													className="h-8 w-8 shrink-0 rounded-full"
+													onClick={(event) => {
+														event.stopPropagation();
+														handleRetryDownload();
+													}}
+													size="icon"
+													variant="ghost"
+												>
+													<RotateCw className="h-4 w-4" />
+												</Button>
+											</TooltipTrigger>
+											<TooltipContent>
+												<p>{t("download.retry")}</p>
+											</TooltipContent>
+										</Tooltip>
+									)}
+									{showShareAction && (
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<Button
+													className="h-8 w-8 shrink-0 rounded-full"
+													onClick={(event) => {
+														event.stopPropagation();
+														void handleCopyLink();
+													}}
+													size="icon"
+													variant="ghost"
+												>
+													<Share2 className="h-4 w-4" />
+												</Button>
+											</TooltipTrigger>
+											<TooltipContent>
+												<p>{t("history.copyUrl")}</p>
+											</TooltipContent>
+										</Tooltip>
 									)}
 									{showCopyAction && (
-										<Button
-											className="h-8 w-8 shrink-0 rounded-full"
-											onClick={(event) => {
-												event.stopPropagation();
-												void handleCopyToClipboard();
-											}}
-											size="icon"
-											variant="ghost"
-										>
-											<Copy className="h-4 w-4" />
-										</Button>
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<Button
+													className="h-8 w-8 shrink-0 rounded-full"
+													onClick={(event) => {
+														event.stopPropagation();
+														void handleCopyToClipboard();
+													}}
+													size="icon"
+													variant="ghost"
+												>
+													<Copy className="h-4 w-4" />
+												</Button>
+											</TooltipTrigger>
+											<TooltipContent>
+												<p>{t("history.copyToClipboard")}</p>
+											</TooltipContent>
+										</Tooltip>
 									)}
-									{showOpenFolderAction && (
-										<Button
-											className="h-8 w-8 shrink-0 rounded-full"
-											onClick={(event) => {
-												event.stopPropagation();
-												void handleOpenFolder();
-											}}
-											size="icon"
-											variant="ghost"
-										>
-											<FolderOpen className="h-4 w-4" />
-										</Button>
+									{showFolderAction && (
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<Button
+													className="h-8 w-8 shrink-0 rounded-full"
+													onClick={(event) => {
+														event.stopPropagation();
+														void handleOpenFolder();
+													}}
+													size="icon"
+													variant="ghost"
+												>
+													<FolderOpen className="h-4 w-4" />
+												</Button>
+											</TooltipTrigger>
+											<TooltipContent>
+												<p>{t("history.openFolder")}</p>
+											</TooltipContent>
+										</Tooltip>
+									)}
+									{showTrashAction && (
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<Button
+													className="h-8 w-8 shrink-0 rounded-full"
+													onClick={(event) => {
+														event.stopPropagation();
+														void handleDeleteRecord();
+													}}
+													size="icon"
+													variant="ghost"
+												>
+													<Trash2 className="h-4 w-4" />
+												</Button>
+											</TooltipTrigger>
+											<TooltipContent>
+												<p>{t("history.deleteRecord")}</p>
+											</TooltipContent>
+										</Tooltip>
 									)}
 									{isInProgressStatus && (
-										<Button
-											aria-label={t("download.cancel")}
-											className="h-8 w-8 shrink-0 rounded-full"
-											disabled={isCancelling}
-											onClick={(event) => {
-												event.stopPropagation();
-												void handleCancel();
-											}}
-											size="icon"
-											variant="ghost"
-										>
-											{isCancelling ? (
-												<Loader2 className="h-4 w-4 animate-spin" />
-											) : (
-												<X className="h-4 w-4" />
-											)}
-										</Button>
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<Button
+													aria-label={t("download.cancel")}
+													className="h-8 w-8 shrink-0 rounded-full"
+													disabled={isCancelling}
+													onClick={(event) => {
+														event.stopPropagation();
+														void handleCancel();
+													}}
+													size="icon"
+													variant="ghost"
+												>
+													{isCancelling ? (
+														<Loader2 className="h-4 w-4 animate-spin" />
+													) : (
+														<X className="h-4 w-4" />
+													)}
+												</Button>
+											</TooltipTrigger>
+											<TooltipContent>
+												<p>{t("download.cancel")}</p>
+											</TooltipContent>
+										</Tooltip>
 									)}
 								</div>
 							</div>

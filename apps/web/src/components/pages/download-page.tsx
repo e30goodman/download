@@ -20,6 +20,7 @@ import {
 } from "@vidbee/ui/components/ui/download-filter-bar";
 import { ScrollArea } from "@vidbee/ui/components/ui/scroll-area";
 import { cn } from "@vidbee/ui/lib/cn";
+import { useNavigate } from "@tanstack/react-router";
 import {
 	useCallback,
 	useEffect,
@@ -40,6 +41,7 @@ import {
 	eventsUrl,
 	orpcClient,
 } from "../../lib/orpc-client";
+import { HIGHLIGHTED_SITE_LABELS } from "../../lib/supported-sites";
 import { readOrpcDownloadSettings } from "../../lib/orpc-download-settings";
 import { readWebSettings } from "../../lib/web-settings";
 import { DownloadDialog } from "../download/download-dialog";
@@ -86,6 +88,7 @@ const resolveDownloadExtension = (record: DownloadRecord): string => {
 
 export const DownloadPage = () => {
 	const { t } = useTranslation();
+	const navigate = useNavigate();
 	const [allRecords, setAllRecords] = useState<DownloadRecord[]>([]);
 	const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 	const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -729,6 +732,20 @@ export const DownloadPage = () => {
 						filters={filters}
 						onFilterChange={setStatusFilter}
 					/>
+					<p className="text-muted-foreground text-xs">
+						{t("sites.homeInlineDescription", {
+							sites: HIGHLIGHTED_SITE_LABELS.join(", "),
+						})}{" "}
+						<button
+							className="text-primary hover:underline"
+							onClick={() => {
+								void navigate({ to: "/supported-sites" });
+							}}
+							type="button"
+						>
+							{t("sites.viewAll")}
+						</button>
+					</p>
 					{!isApiReachable && apiConnectionMessage ? (
 						<p className="font-medium text-destructive text-sm">
 							{apiConnectionMessage}
