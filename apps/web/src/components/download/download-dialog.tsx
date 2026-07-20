@@ -456,38 +456,47 @@ export function DownloadDialog({
 
 	const handleOneClickFromAddUrl = useCallback(
 		async (trimmedUrl: string) => {
-			let title: string | undefined;
-			let thumbnail: string | undefined;
-			let pageUrl = trimmedUrl;
-
-			try {
-				const result = await orpcClient.videoInfo({
-					url: trimmedUrl,
-					settings: readOrpcDownloadSettings(),
-				});
-				title = result.video.title;
-				thumbnail = result.video.thumbnail;
-				pageUrl = result.video.webpageUrl || trimmedUrl;
-			} catch (error) {
-				console.warn("Preview unavailable, adding URL without metadata:", error);
-			}
-
-			addBrowserDownloadRecord(
-				createBrowserHandedOffRecord({
-					filename: `${title || "download"}.mp4`,
-					selectedFormat: {
-						formatId: "preset:original:mp4",
-						ext: "mp4",
-						formatNote: "Best quality",
-					},
-					thumbnail,
-					title: title || trimmedUrl,
-					type: "video",
-					url: pageUrl,
-				}),
-			);
+			const pendingRecord = createBrowserHandedOffRecord({
+				filename: "download.mp4",
+				selectedFormat: {
+					formatId: "preset:original:mp4",
+					ext: "mp4",
+					formatNote: "Best quality",
+				},
+				title: trimmedUrl,
+				type: "video",
+				url: trimmedUrl,
+			});
+			addBrowserDownloadRecord(pendingRecord);
 			toast.success(t("download.addedToQueue"));
 			await notifyDownloadsChanged();
+
+			void (async () => {
+				try {
+					const result = await orpcClient.videoInfo({
+						url: trimmedUrl,
+						settings: readOrpcDownloadSettings(),
+					});
+					addBrowserDownloadRecord(
+						createBrowserHandedOffRecord({
+							filename: `${result.video.title || "download"}.mp4`,
+							handedOffAt: pendingRecord.handedOffAt,
+							id: pendingRecord.id,
+							selectedFormat: pendingRecord.selectedFormat,
+							thumbnail: result.video.thumbnail,
+							title: result.video.title || trimmedUrl,
+							type: "video",
+							url: result.video.webpageUrl || trimmedUrl,
+						}),
+					);
+					await notifyDownloadsChanged();
+				} catch (error) {
+					console.warn(
+						"Preview unavailable after adding URL to queue:",
+						error,
+					);
+				}
+			})();
 		},
 		[notifyDownloadsChanged, t],
 	);
