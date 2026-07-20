@@ -62,8 +62,10 @@ import { toast } from "sonner";
 import { resolvePlatformLabel } from "../../lib/download-platform";
 import { createBrowserDownloadUrl, orpcClient } from "../../lib/orpc-client";
 import { resolveImageProxyUrl } from "../../lib/remote-image-proxy";
+import { buildShareDownloadUrlFromRecord } from "../../lib/share-download-link";
 import { siteConfig } from "../../lib/site-config";
 import { readWebSettings } from "../../lib/web-settings";
+import { DownloadFormatPicker } from "./download-format-picker";
 import type { DownloadRecord } from "./types";
 
 interface DownloadItemProps {
@@ -74,6 +76,10 @@ interface DownloadItemProps {
 	onRetry?: (download: DownloadRecord) => void;
 	onRemove?: (id: string) => void;
 	onCopyUrl?: (url: string) => void;
+	onFormatChange?: (
+		download: DownloadRecord,
+		format: NonNullable<DownloadRecord["selectedFormat"]>,
+	) => void;
 }
 
 interface MetadataDetail {
@@ -263,6 +269,7 @@ export function DownloadItem({
 	onRetry,
 	onRemove,
 	onCopyUrl,
+	onFormatChange,
 }: DownloadItemProps) {
 	const { t } = useTranslation();
 	const [isCancelling, setIsCancelling] = useState(false);
@@ -477,13 +484,14 @@ export function DownloadItem({
 	};
 
 	const handleCopyLink = async () => {
-		if (!download.url?.trim()) {
+		const shareUrl = buildShareDownloadUrlFromRecord(download);
+		if (!shareUrl) {
 			toast.error(t("notifications.copyFailed"));
 			return;
 		}
 
 		if (onCopyUrl) {
-			onCopyUrl(download.url);
+			onCopyUrl(shareUrl);
 			return;
 		}
 
@@ -493,8 +501,8 @@ export function DownloadItem({
 		}
 
 		try {
-			await navigator.clipboard.writeText(download.url);
-			toast.success(t("notifications.urlCopied"));
+			await navigator.clipboard.writeText(shareUrl);
+			toast.success(t("notifications.shareLinkCopied"));
 		} catch {
 			toast.error(t("notifications.copyFailed"));
 		}
@@ -575,6 +583,12 @@ export function DownloadItem({
 		isCompletedStatus &&
 		fileExists;
 	const showShareAction = canCopyLink;
+	const canChangeFormat = Boolean(
+		onFormatChange &&
+			!isBrowserHandoff &&
+			!isInProgressStatus &&
+			download.url?.trim(),
+	);
 	const canDeleteRecord = Boolean(onRemove);
 	const showTrashAction = canDeleteRecord && !isInProgressStatus;
 	const showFolderAction =
@@ -991,18 +1005,34 @@ export function DownloadItem({
 												</span>
 											</>
 										) : null}
-										{qualityLabel && (
-											<Badge className="shrink-0 px-1.5 py-0 text-[10px]">
-												{qualityLabel}
-											</Badge>
-										)}
-										{formatLabelValue && (
-											<Badge
-												className="shrink-0 px-1.5 py-0 text-[10px]"
-												variant="secondary"
-											>
-												{formatLabelValue}
-											</Badge>
+										{canChangeFormat ? (
+											<DownloadFormatPicker
+												disabled={!canChangeFormat}
+												formatLabel={formatLabelValue}
+												onFormatSelect={(format) => {
+													onFormatChange?.(download, format);
+												}}
+												qualityLabel={qualityLabel}
+												selectedFormatId={download.selectedFormat?.formatId}
+												type={download.type}
+												url={download.url ?? ""}
+											/>
+										) : (
+											<>
+												{qualityLabel && (
+													<Badge className="shrink-0 px-1.5 py-0 text-[10px]">
+														{qualityLabel}
+													</Badge>
+												)}
+												{formatLabelValue && (
+													<Badge
+														className="shrink-0 px-1.5 py-0 text-[10px]"
+														variant="secondary"
+													>
+														{formatLabelValue}
+													</Badge>
+												)}
+											</>
 										)}
 										{inlineFileSize && (
 											<>
@@ -1071,7 +1101,7 @@ export function DownloadItem({
 												</Button>
 											</TooltipTrigger>
 											<TooltipContent>
-												<p>{t("history.copyUrl")}</p>
+												<p>{t("history.copyShareLink")}</p>
 											</TooltipContent>
 										</Tooltip>
 									)}
@@ -1324,7 +1354,7 @@ export function DownloadItem({
 							onClick={() => void handleCopyLink()}
 						>
 							<span aria-hidden="true" className="h-4 w-4 shrink-0" />
-							{t("history.copyUrl")}
+							{t("history.copyShareLink")}
 						</ContextMenuItem>
 						{canShowSheet && (
 							<ContextMenuItem onClick={() => setSheetOpen(true)}>
@@ -1363,7 +1393,7 @@ export function DownloadItem({
 							onClick={() => void handleCopyLink()}
 						>
 							<span aria-hidden="true" className="h-4 w-4 shrink-0" />
-							{t("history.copyUrl")}
+							{t("history.copyShareLink")}
 						</ContextMenuItem>
 						{canShowSheet && (
 							<ContextMenuItem onClick={() => setSheetOpen(true)}>
@@ -1425,7 +1455,7 @@ export function DownloadItem({
 							onClick={() => void handleCopyLink()}
 						>
 							<span aria-hidden="true" className="h-4 w-4 shrink-0" />
-							{t("history.copyUrl")}
+							{t("history.copyShareLink")}
 						</ContextMenuItem>
 						{canShowSheet && (
 							<ContextMenuItem onClick={() => setSheetOpen(true)}>

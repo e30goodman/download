@@ -14,7 +14,7 @@ import { Label } from "@vidbee/ui/components/ui/label";
 import { useAddUrlInteraction } from "@vidbee/ui/lib/use-add-url-interaction";
 import { useAddUrlShortcut } from "@vidbee/ui/lib/use-add-url-shortcut";
 import { FileText, FolderOpen, Loader2, Music2, Video } from "lucide-react";
-import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { useWebDownloadSettings } from "../../hooks/use-web-download-settings";
@@ -32,60 +32,26 @@ import {
 } from "../../lib/download-format-preferences";
 import { orpcClient } from "../../lib/orpc-client";
 import { readOrpcDownloadSettings } from "../../lib/orpc-download-settings";
+import type { ShareDownloadParams } from "../../lib/share-download-link";
 import { siteConfig } from "../../lib/site-config";
+import { buildSingleVideoFormatSelector } from "../../lib/video-format-selector";
 import { PlaylistDownload } from "./playlist-download";
 import {
 	SingleVideoDownload,
 	type SingleVideoState,
 } from "./single-video-download";
 
-const isMuxedVideoFormat = (format: VideoFormat | undefined): boolean =>
-	Boolean(
-		format?.vcodec &&
-			format.vcodec !== "none" &&
-			format.acodec &&
-			format.acodec !== "none",
-	);
-
-const resolvePreferredAudioExt = (
-	videoExt: string | undefined,
-): string | undefined => {
-	if (!videoExt) {
-		return undefined;
-	}
-
-	const normalizedExt = videoExt.toLowerCase();
-	if (normalizedExt === "mp4") {
-		return "m4a";
-	}
-	if (normalizedExt === "webm") {
-		return "webm";
-	}
-	return undefined;
-};
-
-const buildSingleVideoFormatSelector = (
-	formatId: string,
-	format: VideoFormat | undefined,
-): string => {
-	if (!format || isMuxedVideoFormat(format)) {
-		return formatId;
-	}
-
-	const preferredAudioExt = resolvePreferredAudioExt(format.ext);
-	if (!preferredAudioExt) {
-		return `${formatId}+bestaudio`;
-	}
-
-	// Prefer same-container audio and keep a fallback when not available.
-	return `${formatId}+bestaudio[ext=${preferredAudioExt}]/${formatId}+bestaudio`;
-};
-
 interface DownloadDialogProps {
 	onDownloadsChanged?: () => Promise<void> | void;
+	shareRequest?: ShareDownloadParams | null;
+	onShareRequestHandled?: () => void;
 }
 
-export function DownloadDialog({ onDownloadsChanged }: DownloadDialogProps) {
+export function DownloadDialog({
+	onDownloadsChanged,
+	shareRequest,
+	onShareRequestHandled,
+}: DownloadDialogProps) {
 	const { t } = useTranslation();
 	const [open, setOpen] = useState(false);
 	const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
@@ -252,6 +218,124 @@ export function DownloadDialog({ onDownloadsChanged }: DownloadDialogProps) {
 		},
 		[notifyDownloadsChanged, settings, t],
 	);
+
+	const startShareDownloadWithFormat = useCallback(
+		async (
+			targetUrl: string,
+			downloadType: DownloadType,
+			formatId: string,
+		) => {
+			const trimmedUrl = targetUrl.trim();
+			if (!trimmedUrl) {
+				toast.error(t("errors.emptyUrl"));
+				return;
+			}
+
+			try {
+				const info = await orpcClient.videoInfo({
+					url: trimmedUrl,
+					settings: readOrpcDownloadSettings(),
+				});
+				const selectedFormatMetadata = (info.video.formats || []).find(
+					(format) => format.formatId === formatId,
+				);
+				const resolvedFormat =
+					downloadType === "video"
+						? buildSingleVideoFormatSelector(
+								formatId,
+								selectedFormatMetadata,
+							)
+						: formatId;
+
+				await orpcClient.downloads.create({
+					url: trimmedUrl,
+					type: downloadType,
+					title: info.video.title,
+					thumbnail: info.video.thumbnail,
+					duration: info.video.duration,
+					description: info.video.description,
+					uploader: info.video.uploader,
+					viewCount: info.video.viewCount,
+					tags: info.video.tags,
+					selectedFormat: selectedFormatMetadata,
+					format: resolvedFormat,
+					audioFormat: downloadType === "audio" ? "mp3" : undefined,
+					settings: readOrpcDownloadSettings(),
+				});
+
+				toast.success(t("download.oneClickDownloadStarted"));
+				await notifyDownloadsChanged();
+			} catch (startError) {
+				console.error("Failed to start shared download:", startError);
+				toast.error(t("notifications.downloadFailed"));
+			}
+		},
+		[notifyDownloadsChanged, t],
+	);
+
+	const processedShareRequestRef = useRef<string | null>(null);
+
+	useEffect(() => {
+		if (!shareRequest) {
+			return;
+		}
+
+		const requestKey = JSON.stringify(shareRequest);
+		if (processedShareRequestRef.current === requestKey) {
+			return;
+		}
+		processedShareRequestRef.current = requestKey;
+
+		const processShareRequest = async () => {
+			const downloadType =
+				shareRequest.type ?? settings.oneClickDownloadType;
+			const trimmedUrl = shareRequest.url.trim();
+			if (!trimmedUrl) {
+				onShareRequestHandled?.();
+				return;
+			}
+
+			const useOneClick =
+				settings.oneClickDownload || downloadType === "text";
+
+			if (useOneClick) {
+				if (shareRequest.formatId && downloadType !== "text") {
+					await startShareDownloadWithFormat(
+						trimmedUrl,
+						downloadType,
+						shareRequest.formatId,
+					);
+				} else {
+					await startOneClickDownload(trimmedUrl);
+				}
+				onShareRequestHandled?.();
+				return;
+			}
+
+			setOpen(true);
+			setUrl(trimmedUrl);
+			setSingleVideoState((prev) => ({
+				...prev,
+				activeTab: downloadType === "audio" ? "audio" : "video",
+				selectedVideoFormat:
+					downloadType === "video" ? (shareRequest.formatId ?? "") : "",
+				selectedAudioFormat:
+					downloadType === "audio" ? (shareRequest.formatId ?? "") : "",
+			}));
+			await fetchVideoInfo(trimmedUrl);
+			onShareRequestHandled?.();
+		};
+
+		void processShareRequest();
+	}, [
+		fetchVideoInfo,
+		onShareRequestHandled,
+		settings.oneClickDownload,
+		settings.oneClickDownloadType,
+		shareRequest,
+		startOneClickDownload,
+		startShareDownloadWithFormat,
+	]);
 
 	const handleFetchVideo = useCallback(async () => {
 		if (!url.trim()) {

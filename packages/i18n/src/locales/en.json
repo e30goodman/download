@@ -118,6 +118,7 @@
     "back": "Back",
     "cancel": "Cancel",
     "cancelled": "Cancelled",
+    "chooseFormat": "Choose format",
     "clearCompleted": "Clear Completed",
     "clearDownloads": "Clear Downloads",
     "completed": "Completed",
@@ -275,6 +276,7 @@
     "confirmDeletePlaylistTitle": "Remove playlist history?",
     "confirmDeletePlaylistDescription": "Remove {{count}} items from {{title}} and delete their files.",
     "copyToClipboard": "Copy to clipboard",
+    "copyShareLink": "Copy download link",
     "copyUrl": "Copy URL",
     "date": "Date",
     "deletePlaylist": "Remove Playlist",
@@ -350,6 +352,7 @@
     "removeFailed": "Failed to remove item",
     "settingsSaved": "Settings saved",
     "urlCopied": "URL copied to clipboard",
+    "shareLinkCopied": "Download link copied to clipboard",
     "videoCopied": "Video copied to clipboard"
   },
   "playlist": {

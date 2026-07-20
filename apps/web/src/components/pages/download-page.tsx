@@ -41,9 +41,14 @@ import {
 	eventsUrl,
 	orpcClient,
 } from "../../lib/orpc-client";
+import {
+	parseShareDownloadParams,
+	type ShareDownloadParams,
+} from "../../lib/share-download-link";
 import { HIGHLIGHTED_SITE_LABELS } from "../../lib/supported-sites";
 import { readOrpcDownloadSettings } from "../../lib/orpc-download-settings";
 import { readWebSettings } from "../../lib/web-settings";
+import { buildSingleVideoFormatSelector } from "../../lib/video-format-selector";
 import { DownloadDialog } from "../download/download-dialog";
 import { DownloadItem } from "../download/download-item";
 import { PlaylistDownloadGroup } from "../download/playlist-download-group";
@@ -100,6 +105,12 @@ export const DownloadPage = () => {
 	const alsoDeleteFilesId = useId();
 	const [isApiReachable, setIsApiReachable] = useState(false);
 	const [apiConnectionMessage, setApiConnectionMessage] = useState("");
+	const [shareRequest, setShareRequest] = useState<ShareDownloadParams | null>(
+		() =>
+			typeof window === "undefined"
+				? null
+				: parseShareDownloadParams(window.location.search),
+	);
 	const refreshGenerationRef = useRef(0);
 
 	const refreshData = useCallback(async () => {
@@ -655,6 +666,15 @@ export const DownloadPage = () => {
 		}
 
 		try {
+			const selectedFormat = download.selectedFormat;
+			const resolvedFormat =
+				download.type === "video" && selectedFormat
+					? buildSingleVideoFormatSelector(
+							selectedFormat.formatId,
+							selectedFormat,
+						)
+					: selectedFormat?.formatId;
+
 			await orpcClient.downloads.create({
 				url: download.url,
 				type: download.type,
@@ -666,18 +686,60 @@ export const DownloadPage = () => {
 				uploader: download.uploader,
 				viewCount: download.viewCount,
 				tags: download.tags,
-				selectedFormat: download.selectedFormat,
+				selectedFormat,
 				playlistId: download.playlistId,
 				playlistTitle: download.playlistTitle,
 				playlistIndex: download.playlistIndex,
 				playlistSize: download.playlistSize,
-				format: download.selectedFormat?.formatId,
+				format: resolvedFormat,
 				audioFormat: download.type === "audio" ? "mp3" : undefined,
 				settings: readOrpcDownloadSettings(),
 			});
 			await refreshData();
 		} catch (error) {
 			console.error("Failed to retry download:", error);
+			toast.error(t("notifications.downloadFailed"));
+		}
+	};
+
+	const handleFormatChange = async (
+		download: DownloadRecord,
+		format: NonNullable<DownloadRecord["selectedFormat"]>,
+	) => {
+		if (download.entryType === "browser" || !download.url) {
+			return;
+		}
+
+		try {
+			const resolvedFormat =
+				download.type === "video"
+					? buildSingleVideoFormatSelector(format.formatId, format)
+					: format.formatId;
+
+			await orpcClient.downloads.create({
+				url: download.url,
+				type: download.type,
+				title: download.title,
+				thumbnail: download.thumbnail,
+				duration: download.duration,
+				description: download.description,
+				channel: download.channel,
+				uploader: download.uploader,
+				viewCount: download.viewCount,
+				tags: download.tags,
+				selectedFormat: format,
+				playlistId: download.playlistId,
+				playlistTitle: download.playlistTitle,
+				playlistIndex: download.playlistIndex,
+				playlistSize: download.playlistSize,
+				format: resolvedFormat,
+				audioFormat: download.type === "audio" ? "mp3" : undefined,
+				settings: readOrpcDownloadSettings(),
+			});
+			toast.success(t("download.addedToQueue"));
+			await refreshData();
+		} catch (error) {
+			console.error("Failed to change download format:", error);
 			toast.error(t("notifications.downloadFailed"));
 		}
 	};
@@ -715,19 +777,34 @@ export const DownloadPage = () => {
 
 		try {
 			await navigator.clipboard.writeText(url);
-			toast.success(t("notifications.urlCopied"));
+			toast.success(t("notifications.shareLinkCopied"));
 		} catch (error) {
 			console.error("Failed to copy url:", error);
 			toast.error(t("notifications.copyFailed"));
 		}
 	};
 
+	const handleShareRequestHandled = useCallback(() => {
+		setShareRequest(null);
+		if (typeof window !== "undefined") {
+			const nextUrl = new URL(window.location.href);
+			nextUrl.search = "";
+			window.history.replaceState({}, "", nextUrl.toString());
+		}
+	}, []);
+
 	return (
 		<AppShell page="download">
 			<div className={cn("flex h-full flex-col")}>
 				<CardHeader className="z-50 gap-4 bg-background p-0 px-6 py-4 backdrop-blur">
 					<DownloadFilterBar
-						actions={<DownloadDialog onDownloadsChanged={refreshData} />}
+						actions={
+							<DownloadDialog
+								onDownloadsChanged={refreshData}
+								onShareRequestHandled={handleShareRequestHandled}
+								shareRequest={shareRequest}
+							/>
+						}
 						activeFilter={statusFilter}
 						filters={filters}
 						onFilterChange={setStatusFilter}
@@ -771,6 +848,7 @@ export const DownloadPage = () => {
 												key={`${item.record.entryType}:${item.record.id}`}
 												onCancel={handleCancelDownload}
 												onCopyUrl={handleCopyUrl}
+												onFormatChange={handleFormatChange}
 												onRemove={handleRemoveHistoryRecord}
 												onRetry={handleRetryDownload}
 												onToggleSelect={handleToggleSelect}
@@ -789,6 +867,7 @@ export const DownloadPage = () => {
 											key={`group:${group.id}`}
 											onCancel={handleCancelDownload}
 											onCopyUrl={handleCopyUrl}
+											onFormatChange={handleFormatChange}
 											onDeletePlaylist={handleRequestDeletePlaylist}
 											onRemove={handleRemoveHistoryRecord}
 											onRetry={handleRetryDownload}
