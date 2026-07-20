@@ -1,5 +1,3 @@
-import { Badge } from "@vidbee/ui/components/ui/badge";
-import { Button } from "@vidbee/ui/components/ui/button";
 import {
 	Card,
 	CardContent,
@@ -10,10 +8,8 @@ import {
 import { ExternalLink } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
-	HIGHLIGHTED_SITE_KEYS,
 	POPULAR_SITE_KEYS,
 	POPULAR_SITE_URLS,
-	YTDLP_SUPPORTED_SITES_URL,
 } from "../../lib/supported-sites";
 import { AppShell } from "../layout/app-shell";
 
@@ -61,39 +57,6 @@ export const SupportedSitesPage = () => {
 						))}
 					</div>
 				</section>
-
-				<Card>
-					<CardHeader>
-						<CardTitle className="text-base">{t("sites.moreTitle")}</CardTitle>
-						<CardDescription>{t("sites.moreDescription")}</CardDescription>
-					</CardHeader>
-					<CardContent className="flex flex-wrap items-center gap-3">
-						<div className="flex flex-wrap gap-2">
-							{HIGHLIGHTED_SITE_KEYS.map((siteKey) => (
-								<Badge asChild key={siteKey} variant="secondary">
-									<a
-										href={POPULAR_SITE_URLS[siteKey]}
-										rel="noopener noreferrer"
-										target="_blank"
-									>
-										{t(`sites.popular.${siteKey}.label`)}
-									</a>
-								</Badge>
-							))}
-							<Badge variant="outline">1000+</Badge>
-						</div>
-						<Button asChild className="gap-2" variant="outline">
-							<a
-								href={YTDLP_SUPPORTED_SITES_URL}
-								rel="noopener noreferrer"
-								target="_blank"
-							>
-								{t("sites.openFullList")}
-								<ExternalLink className="h-4 w-4" />
-							</a>
-						</Button>
-					</CardContent>
-				</Card>
 			</div>
 		</AppShell>
 	);
