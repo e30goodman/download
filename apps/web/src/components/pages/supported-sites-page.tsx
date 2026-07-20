@@ -10,8 +10,9 @@ import {
 import { ExternalLink } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
-	HIGHLIGHTED_SITE_LABELS,
+	HIGHLIGHTED_SITE_KEYS,
 	POPULAR_SITE_KEYS,
+	POPULAR_SITE_URLS,
 	YTDLP_SUPPORTED_SITES_URL,
 } from "../../lib/supported-sites";
 import { AppShell } from "../layout/app-shell";
@@ -41,7 +42,15 @@ export const SupportedSitesPage = () => {
 							<Card className="h-full" key={siteKey}>
 								<CardHeader className="pb-2">
 									<CardTitle className="text-base">
-										{t(`sites.popular.${siteKey}.label`)}
+										<a
+											className="inline-flex items-center gap-1.5 text-primary hover:underline"
+											href={POPULAR_SITE_URLS[siteKey]}
+											rel="noopener noreferrer"
+											target="_blank"
+										>
+											{t(`sites.popular.${siteKey}.label`)}
+											<ExternalLink className="h-3.5 w-3.5 shrink-0 opacity-70" />
+										</a>
 									</CardTitle>
 								</CardHeader>
 								<CardContent>
@@ -61,9 +70,15 @@ export const SupportedSitesPage = () => {
 					</CardHeader>
 					<CardContent className="flex flex-wrap items-center gap-3">
 						<div className="flex flex-wrap gap-2">
-							{HIGHLIGHTED_SITE_LABELS.map((label) => (
-								<Badge key={label} variant="secondary">
-									{label}
+							{HIGHLIGHTED_SITE_KEYS.map((siteKey) => (
+								<Badge asChild key={siteKey} variant="secondary">
+									<a
+										href={POPULAR_SITE_URLS[siteKey]}
+										rel="noopener noreferrer"
+										target="_blank"
+									>
+										{t(`sites.popular.${siteKey}.label`)}
+									</a>
 								</Badge>
 							))}
 							<Badge variant="outline">1000+</Badge>
