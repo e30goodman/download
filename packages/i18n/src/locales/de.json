@@ -260,7 +260,8 @@
     "fetchInfoFailed": "Video-Informationen konnten nicht abgerufen werden",
     "invalidUrl": "Der Inhalt der Zwischenablage ist keine gültige URL",
     "networkError": "Ein Fehler ist aufgetreten. Überprüfen Sie Ihr Netzwerk und verwenden Sie die richtige URL",
-    "pasteFromClipboard": "Einfügen aus Zwischenablage fehlgeschlagen"
+    "pasteFromClipboard": "Einfügen aus Zwischenablage fehlgeschlagen",
+    "apiUnreachable": "Download-Server nicht erreichbar. Bitte kurz warten und erneut versuchen."
   },
   "history": {
     "clearCancelled": "Abgebrochene löschen",

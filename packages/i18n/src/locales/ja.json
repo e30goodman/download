@@ -260,7 +260,8 @@
     "fetchInfoFailed": "ビデオ情報の取得に失敗",
     "invalidUrl": "クリップボードの内容が有効なURLではありません",
     "networkError": "エラーが発生しました。ネットワークを確認し、正しいURLを使用してください",
-    "pasteFromClipboard": "クリップボードからの貼り付けに失敗"
+    "pasteFromClipboard": "クリップボードからの貼り付けに失敗",
+    "apiUnreachable": "ダウンロードサーバーに接続できません。少し待ってから再試行してください。"
   },
   "history": {
     "clearCancelled": "キャンセル済みをクリア",

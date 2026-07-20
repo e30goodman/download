@@ -260,7 +260,8 @@
     "fetchInfoFailed": "Errore nel recupero delle informazioni video",
     "invalidUrl": "Il contenuto degli appunti non è un URL valido",
     "networkError": "Si è verificato un errore. Controlla la tua rete e usa un URL corretto",
-    "pasteFromClipboard": "Errore nell'incollare dagli appunti"
+    "pasteFromClipboard": "Errore nell'incollare dagli appunti",
+    "apiUnreachable": "Impossibile raggiungere il server di download. Attendi e riprova."
   },
   "history": {
     "clearCancelled": "Cancella Annullati",

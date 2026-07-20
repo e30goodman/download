@@ -260,7 +260,8 @@
     "fetchInfoFailed": "Échec de la récupération des informations vidéo",
     "invalidUrl": "Le contenu du presse-papiers n'est pas une URL valide",
     "networkError": "Une erreur s'est produite. Vérifiez votre réseau et utilisez une URL correcte",
-    "pasteFromClipboard": "Échec du collage depuis le presse-papiers"
+    "pasteFromClipboard": "Échec du collage depuis le presse-papiers",
+    "apiUnreachable": "Impossible de joindre le serveur de telechargement. Patientez puis reessayez."
   },
   "history": {
     "clearCancelled": "Effacer les Annulés",

@@ -260,7 +260,8 @@
     "fetchInfoFailed": "Error al obtener información del video",
     "invalidUrl": "El contenido del portapapeles no es una URL válida",
     "networkError": "Ha ocurrido un error. Verifica tu red y usa una URL correcta",
-    "pasteFromClipboard": "Error al pegar desde el portapapeles"
+    "pasteFromClipboard": "Error al pegar desde el portapapeles",
+    "apiUnreachable": "No se puede conectar al servidor de descargas. Espere unos segundos e intente de nuevo."
   },
   "history": {
     "clearCancelled": "Limpiar Cancelados",

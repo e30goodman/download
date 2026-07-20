@@ -260,7 +260,8 @@
     "fetchInfoFailed": "取得影片資訊失敗",
     "invalidUrl": "剪貼簿內容不是有效的網址",
     "networkError": "發生錯誤。請檢查網路並確認連結正確",
-    "pasteFromClipboard": "從剪貼簿貼上失敗"
+    "pasteFromClipboard": "從剪貼簿貼上失敗",
+    "apiUnreachable": "無法連線下載伺服器，請稍候再試。"
   },
   "history": {
     "clearCancelled": "清除已取消",

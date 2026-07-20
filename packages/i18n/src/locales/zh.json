@@ -260,7 +260,8 @@
     "fetchInfoFailed": "获取视频信息失败",
     "invalidUrl": "剪贴板内容不是有效的 URL",
     "networkError": "发生错误。请检查网络并确认链接正确",
-    "pasteFromClipboard": "从剪贴板粘贴失败"
+    "pasteFromClipboard": "从剪贴板粘贴失败",
+    "apiUnreachable": "无法连接下载服务器，请稍候再试。"
   },
   "history": {
     "clearCancelled": "清除已取消",

@@ -260,7 +260,8 @@
     "fetchInfoFailed": "Gagal mengambil informasi video",
     "invalidUrl": "Konten papan klip bukan URL yang valid",
     "networkError": "Terjadi kesalahan. Periksa jaringan Anda dan gunakan URL yang benar",
-    "pasteFromClipboard": "Gagal menempel dari clipboard"
+    "pasteFromClipboard": "Gagal menempel dari clipboard",
+    "apiUnreachable": "Tidak dapat menghubungi server unduhan. Tunggu sebentar lalu coba lagi."
   },
   "history": {
     "clearCancelled": "Hapus Dibatalkan",

@@ -260,7 +260,8 @@
     "fetchInfoFailed": "Falha ao buscar informações do vídeo",
     "invalidUrl": "O conteúdo da área de transferência não é uma URL válida",
     "networkError": "Algum erro ocorreu. Verifique sua rede e use uma URL correta",
-    "pasteFromClipboard": "Falha ao colar da área de transferência"
+    "pasteFromClipboard": "Falha ao colar da área de transferência",
+    "apiUnreachable": "Nao foi possivel contactar o servidor de downloads. Aguarde e tente novamente."
   },
   "history": {
     "clearCancelled": "Limpar Cancelados",

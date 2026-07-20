@@ -180,8 +180,14 @@ export const DownloadPage = () => {
 				),
 			);
 			setIsApiReachable(false);
-			const message =
+			const rawMessage =
 				error instanceof Error ? error.message : t("errors.networkError");
+			const message =
+				/failed to fetch|networkerror|load failed|fetch failed/i.test(
+					rawMessage,
+				)
+					? t("errors.apiUnreachable")
+					: rawMessage;
 			setApiConnectionMessage(message);
 		}
 	}, [t]);
@@ -881,7 +887,15 @@ export const DownloadPage = () => {
 			await refreshData();
 		} catch (error) {
 			console.error("Failed to start queued browser download:", error);
-			toast.error(t("notifications.downloadFailed"));
+			const rawMessage =
+				error instanceof Error ? error.message : "";
+			toast.error(
+				/failed to fetch|networkerror|load failed|fetch failed/i.test(
+					rawMessage,
+				)
+					? t("errors.apiUnreachable")
+					: t("notifications.downloadFailed"),
+			);
 		}
 	};
 

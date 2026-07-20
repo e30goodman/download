@@ -260,7 +260,8 @@
     "fetchInfoFailed": "Failed to fetch video information",
     "invalidUrl": "The clipboard content is not a valid URL",
     "networkError": "Some error has occurred. Check your network and use correct URL",
-    "pasteFromClipboard": "Failed to paste from clipboard"
+    "pasteFromClipboard": "Failed to paste from clipboard",
+    "apiUnreachable": "Cannot reach the download server. Wait a few seconds and try again."
   },
   "history": {
     "clearCancelled": "Clear Cancelled",

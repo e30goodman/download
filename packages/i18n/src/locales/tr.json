@@ -260,7 +260,8 @@
     "fetchInfoFailed": "Video bilgisi alamadı",
     "invalidUrl": "Pano içeriği geçerli bir URL değil",
     "networkError": "Bir hata oluştu. Ağınızı kontrol edin ve doğru URL'i kullanın.",
-    "pasteFromClipboard": "Panodan yapıştırılamadı"
+    "pasteFromClipboard": "Panodan yapıştırılamadı",
+    "apiUnreachable": "Indirme sunucusuna ulasilamiyor. Biraz bekleyip tekrar deneyin."
   },
   "history": {
     "clearCancelled": "İptal Edilenleri Temizle",
