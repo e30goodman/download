@@ -50,9 +50,14 @@ import { readOrpcDownloadSettings } from "../../lib/orpc-download-settings";
 import { readWebSettings } from "../../lib/web-settings";
 import {
 	buildFormatSelectorFromPreset,
+	buildSelectedFormatForRowPreset,
 	getDefaultRowPresetForType,
+	getDefaultVideoContainer,
+	getExtensionForRowSelection,
 	inferRowFormatPreset,
+	inferVideoContainerFromDownload,
 	type RowFormatSelection,
+	type RowVideoContainer,
 } from "../../lib/row-format-presets";
 import { buildSingleVideoFormatSelector } from "../../lib/video-format-selector";
 import { DownloadDialog } from "../download/download-dialog";
@@ -100,15 +105,13 @@ const resolveDownloadExtension = (record: DownloadRecord): string => {
 const getExtensionForPreset = (
 	type: DownloadRecord["type"],
 	preset: string,
-): string => {
-	if (type === "video") {
-		return "mp4";
-	}
-	if (type === "audio") {
-		return preset === "wav" ? "wav" : "mp3";
-	}
-	return preset === "md" ? "md" : "txt";
-};
+	container?: RowVideoContainer,
+): string =>
+	getExtensionForRowSelection(
+		type,
+		preset as Parameters<typeof getExtensionForRowSelection>[1],
+		container,
+	);
 
 export const DownloadPage = () => {
 	const { t } = useTranslation();
@@ -730,12 +733,25 @@ export const DownloadPage = () => {
 
 		try {
 			if (download.entryType === "browser") {
-				const nextExt = getExtensionForPreset(selection.type, selection.preset);
+				const container =
+					selection.type === "video"
+						? inferVideoContainerFromDownload(download)
+						: undefined;
+				const nextExt = getExtensionForPreset(
+					selection.type,
+					selection.preset,
+					container,
+				);
 				const updatedRecord = createBrowserHandedOffRecord({
 					filename: `${download.title || "download"}.${nextExt}`,
 					handedOffAt: download.handedOffAt,
 					id: download.id,
-					selectedFormat: download.selectedFormat,
+					selectedFormat: buildSelectedFormatForRowPreset({
+						type: selection.type,
+						preset: selection.preset,
+						container,
+						previous: download.selectedFormat,
+					}),
 					thumbnail: download.thumbnail,
 					title: download.title,
 					type: selection.type,
@@ -747,6 +763,10 @@ export const DownloadPage = () => {
 			}
 
 			const presetFormats = buildFormatSelectorFromPreset(selection);
+			const container =
+				selection.type === "video"
+					? inferVideoContainerFromDownload(download)
+					: undefined;
 
 			await orpcClient.downloads.create({
 				url: download.url,
@@ -765,6 +785,7 @@ export const DownloadPage = () => {
 				playlistSize: download.playlistSize,
 				format: presetFormats.format,
 				audioFormat: presetFormats.audioFormat,
+				containerFormat: container,
 				settings: readOrpcDownloadSettings(),
 			});
 			if (download.entryType === "history") {
@@ -779,6 +800,74 @@ export const DownloadPage = () => {
 		}
 	};
 
+	const handleContainerChange = async (
+		download: DownloadRecord,
+		container: RowVideoContainer,
+	) => {
+		if (!download.url || download.type !== "video") {
+			return;
+		}
+
+		try {
+			const preset = inferRowFormatPreset(download);
+			if (download.entryType === "browser") {
+				const nextExt = getExtensionForPreset(download.type, preset, container);
+				const updatedRecord = createBrowserHandedOffRecord({
+					filename: `${download.title || "download"}.${nextExt}`,
+					handedOffAt: download.handedOffAt,
+					id: download.id,
+					selectedFormat: buildSelectedFormatForRowPreset({
+						type: download.type,
+						preset,
+						container,
+						previous: download.selectedFormat,
+					}),
+					thumbnail: download.thumbnail,
+					title: download.title,
+					type: download.type,
+					url: download.url,
+				});
+				addBrowserDownloadRecord(updatedRecord);
+				await refreshData();
+				return;
+			}
+
+			const presetFormats = buildFormatSelectorFromPreset({
+				type: download.type,
+				preset,
+			});
+			await orpcClient.downloads.create({
+				url: download.url,
+				type: download.type,
+				title: download.title,
+				thumbnail: download.thumbnail,
+				duration: download.duration,
+				description: download.description,
+				channel: download.channel,
+				uploader: download.uploader,
+				viewCount: download.viewCount,
+				tags: download.tags,
+				playlistId: download.playlistId,
+				playlistTitle: download.playlistTitle,
+				playlistIndex: download.playlistIndex,
+				playlistSize: download.playlistSize,
+				format: presetFormats.format,
+				audioFormat: presetFormats.audioFormat,
+				containerFormat: container,
+				settings: readOrpcDownloadSettings(),
+			});
+			if (download.entryType === "history") {
+				await orpcClient.history.removeItems({ ids: [download.id] });
+				pruneSelectedIds([download.id]);
+			}
+			toast.success(t("download.addedToQueue"));
+			await refreshData();
+		} catch (error) {
+			console.error("Failed to change download container:", error);
+			toast.error(t("notifications.downloadFailed"));
+		}
+	};
+
 	const handleTypeChange = async (
 		download: DownloadRecord,
 		type: DownloadRecord["type"],
@@ -788,14 +877,20 @@ export const DownloadPage = () => {
 		}
 
 		try {
+			const defaultPreset = getDefaultRowPresetForType(type);
+			const container =
+				type === "video" ? getDefaultVideoContainer() : undefined;
 			if (download.entryType === "browser") {
-				const defaultPreset = getDefaultRowPresetForType(type);
-				const nextExt = getExtensionForPreset(type, defaultPreset);
+				const nextExt = getExtensionForPreset(type, defaultPreset, container);
 				const updatedRecord = createBrowserHandedOffRecord({
 					filename: `${download.title || "download"}.${nextExt}`,
 					handedOffAt: download.handedOffAt,
 					id: download.id,
-					selectedFormat: download.selectedFormat,
+					selectedFormat: buildSelectedFormatForRowPreset({
+						type,
+						preset: defaultPreset,
+						container,
+					}),
 					thumbnail: download.thumbnail,
 					title: download.title,
 					type,
@@ -808,7 +903,7 @@ export const DownloadPage = () => {
 
 			const presetFormats = buildFormatSelectorFromPreset({
 				type,
-				preset: getDefaultRowPresetForType(type),
+				preset: defaultPreset,
 			});
 
 			await orpcClient.downloads.create({
@@ -828,6 +923,7 @@ export const DownloadPage = () => {
 				playlistSize: download.playlistSize,
 				format: presetFormats.format,
 				audioFormat: presetFormats.audioFormat,
+				containerFormat: container,
 				settings: readOrpcDownloadSettings(),
 			});
 			if (download.entryType === "history") {
@@ -848,6 +944,10 @@ export const DownloadPage = () => {
 		}
 		try {
 			const preset = inferRowFormatPreset(download);
+			const container =
+				download.type === "video"
+					? inferVideoContainerFromDownload(download)
+					: undefined;
 			const presetFormats = buildFormatSelectorFromPreset({
 				type: download.type,
 				preset,
@@ -860,6 +960,7 @@ export const DownloadPage = () => {
 				thumbnail: download.thumbnail,
 				format: presetFormats.format,
 				audioFormat: presetFormats.audioFormat,
+				containerFormat: container,
 				settings: readOrpcDownloadSettings(),
 			});
 			removeBrowserDownloadRecords([download.id]);
@@ -964,6 +1065,7 @@ export const DownloadPage = () => {
 												onFormatChange={handleFormatChange}
 												onRemove={handleRemoveHistoryRecord}
 												onRetry={handleRetryDownload}
+												onContainerChange={handleContainerChange}
 												onStartDownload={handleStartBrowserDownload}
 												onTypeChange={handleTypeChange}
 												onToggleSelect={handleToggleSelect}
@@ -986,6 +1088,7 @@ export const DownloadPage = () => {
 											onDeletePlaylist={handleRequestDeletePlaylist}
 											onRemove={handleRemoveHistoryRecord}
 											onRetry={handleRetryDownload}
+											onContainerChange={handleContainerChange}
 											onStartDownload={handleStartBrowserDownload}
 											onTypeChange={handleTypeChange}
 											onToggleSelect={handleToggleSelect}

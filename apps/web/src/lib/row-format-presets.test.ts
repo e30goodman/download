@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
 	buildFormatSelectorFromPreset,
+	buildSelectedFormatForRowPreset,
 	getDefaultRowPresetForType,
 	getRowFormatOptions,
+	getRowVideoContainerOptions,
 	inferRowFormatPreset,
+	inferVideoContainerFromDownload,
 } from "./row-format-presets";
 
 describe("row format presets", () => {
@@ -22,6 +25,9 @@ describe("row format presets", () => {
 			"txt",
 			"md",
 		]);
+		expect(
+			getRowVideoContainerOptions().map((option) => option.container),
+		).toEqual(["mp4", "mkv", "webm"]);
 	});
 
 	it("builds format selectors from presets", () => {
@@ -47,11 +53,43 @@ describe("row format presets", () => {
 				selectedFormat: { formatId: "137", ext: "mp4", height: 1080 },
 			}),
 		).toBe("1080");
+		expect(
+			inferVideoContainerFromDownload({
+				id: "1",
+				entryType: "history",
+				url: "https://youtube.com/watch?v=abc",
+				type: "video",
+				status: "completed",
+				selectedFormat: { formatId: "137", ext: "mkv", height: 720 },
+			}),
+		).toBe("mkv");
 	});
 
 	it("returns default preset per download type", () => {
 		expect(getDefaultRowPresetForType("video")).toBe("original");
 		expect(getDefaultRowPresetForType("audio")).toBe("mp3");
 		expect(getDefaultRowPresetForType("text")).toBe("txt");
+	});
+
+	it("builds selected format metadata for browser row updates", () => {
+		expect(
+			buildSelectedFormatForRowPreset({
+				type: "video",
+				preset: "720",
+				container: "webm",
+			}),
+		).toMatchObject({
+			ext: "webm",
+			height: 720,
+			formatNote: "720p",
+		});
+		expect(
+			buildSelectedFormatForRowPreset({
+				type: "audio",
+				preset: "wav",
+			}),
+		).toMatchObject({
+			ext: "wav",
+		});
 	});
 });

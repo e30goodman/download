@@ -9,9 +9,15 @@ export type RowVideoPreset = "original" | "1080" | "720" | "360";
 export type RowAudioPreset = "mp3" | "wav";
 export type RowTextPreset = "txt" | "md";
 export type RowFormatPreset = RowVideoPreset | RowAudioPreset | RowTextPreset;
+export type RowVideoContainer = "mp4" | "mkv" | "webm";
 
 export interface RowFormatOption {
 	preset: RowFormatPreset;
+	label: string;
+}
+
+export interface RowContainerOption {
+	container: RowVideoContainer;
 	label: string;
 }
 
@@ -28,9 +34,10 @@ const VIDEO_PRESET_ORDER: RowVideoPreset[] = [
 ];
 const AUDIO_PRESET_ORDER: RowAudioPreset[] = ["mp3", "wav"];
 const TEXT_PRESET_ORDER: RowTextPreset[] = ["txt", "md"];
+const VIDEO_CONTAINER_ORDER: RowVideoContainer[] = ["mp4", "mkv", "webm"];
 
 const VIDEO_PRESET_LABELS: Record<RowVideoPreset, string> = {
-	original: "Best",
+	original: "Best quality",
 	"1080": "1080p",
 	"720": "720p",
 	"360": "360p",
@@ -44,6 +51,19 @@ const AUDIO_PRESET_LABELS: Record<RowAudioPreset, string> = {
 const TEXT_PRESET_LABELS: Record<RowTextPreset, string> = {
 	txt: "TXT",
 	md: "MD",
+};
+
+const VIDEO_CONTAINER_LABELS: Record<RowVideoContainer, string> = {
+	mp4: "MP4",
+	mkv: "MKV",
+	webm: "WEBM",
+};
+
+const VIDEO_PRESET_HEIGHT: Record<RowVideoPreset, number | undefined> = {
+	original: undefined,
+	"1080": 1080,
+	"720": 720,
+	"360": 360,
 };
 
 export const getRowFormatOptions = (type: DownloadType): RowFormatOption[] => {
@@ -65,6 +85,12 @@ export const getRowFormatOptions = (type: DownloadType): RowFormatOption[] => {
 	}));
 };
 
+export const getRowVideoContainerOptions = (): RowContainerOption[] =>
+	VIDEO_CONTAINER_ORDER.map((container) => ({
+		container,
+		label: VIDEO_CONTAINER_LABELS[container],
+	}));
+
 export const getDefaultRowPresetForType = (
 	type: DownloadType,
 ): RowFormatPreset => {
@@ -76,6 +102,8 @@ export const getDefaultRowPresetForType = (
 	}
 	return "txt";
 };
+
+export const getDefaultVideoContainer = (): RowVideoContainer => "mp4";
 
 export const getRowFormatPresetLabel = (
 	type: DownloadType,
@@ -89,6 +117,10 @@ export const getRowFormatPresetLabel = (
 	}
 	return TEXT_PRESET_LABELS[preset as RowTextPreset];
 };
+
+export const getRowVideoContainerLabel = (
+	container: RowVideoContainer,
+): string => VIDEO_CONTAINER_LABELS[container];
 
 const videoPresetToQuality = (
 	preset: RowVideoPreset,
@@ -156,8 +188,22 @@ export const inferAudioPresetFromDownload = (
 export const inferTextPresetFromDownload = (
 	download: DownloadRecord,
 ): RowTextPreset => {
-	const ext = download.savedFileName?.split(".").pop()?.toLowerCase();
+	const ext =
+		download.selectedFormat?.ext?.toLowerCase() ??
+		download.savedFileName?.split(".").pop()?.toLowerCase();
 	return ext === "md" ? "md" : "txt";
+};
+
+export const inferVideoContainerFromDownload = (
+	download: DownloadRecord,
+): RowVideoContainer => {
+	const ext =
+		download.selectedFormat?.ext?.toLowerCase() ??
+		download.savedFileName?.split(".").pop()?.toLowerCase();
+	if (ext === "mkv" || ext === "webm") {
+		return ext;
+	}
+	return "mp4";
 };
 
 export const inferRowFormatPreset = (
@@ -179,6 +225,7 @@ export const getRowFormatDisplay = (
 	if (download.type === "video") {
 		return {
 			qualityLabel: VIDEO_PRESET_LABELS[preset as RowVideoPreset],
+			formatLabel: VIDEO_CONTAINER_LABELS[inferVideoContainerFromDownload(download)],
 		};
 	}
 	if (download.type === "audio") {
@@ -189,4 +236,44 @@ export const getRowFormatDisplay = (
 	return {
 		formatLabel: TEXT_PRESET_LABELS[preset as RowTextPreset],
 	};
+};
+
+export const buildSelectedFormatForRowPreset = ({
+	type,
+	preset,
+	container,
+	previous,
+}: {
+	type: DownloadType;
+	preset: RowFormatPreset;
+	container?: RowVideoContainer;
+	previous?: DownloadRecord["selectedFormat"];
+}): NonNullable<DownloadRecord["selectedFormat"]> => {
+	if (type === "video") {
+		const videoPreset = preset as RowVideoPreset;
+		const nextContainer = container ?? getDefaultVideoContainer();
+		return {
+			formatId: previous?.formatId ?? `preset:${videoPreset}:${nextContainer}`,
+			ext: nextContainer,
+			height: VIDEO_PRESET_HEIGHT[videoPreset],
+			formatNote: VIDEO_PRESET_LABELS[videoPreset],
+		};
+	}
+
+	const nextExt = preset as string;
+	return {
+		formatId: previous?.formatId ?? `preset:${type}:${nextExt}`,
+		ext: nextExt,
+	};
+};
+
+export const getExtensionForRowSelection = (
+	type: DownloadType,
+	preset: RowFormatPreset,
+	container?: RowVideoContainer,
+): string => {
+	if (type === "video") {
+		return container ?? getDefaultVideoContainer();
+	}
+	return preset;
 };

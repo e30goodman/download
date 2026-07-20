@@ -6,6 +6,7 @@ import {
 	PopoverContent,
 	PopoverTrigger,
 } from "@vidbee/ui/components/ui/popover";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 interface DownloadTypePickerProps {
@@ -22,9 +23,10 @@ export const DownloadTypePicker = ({
 	onTypeSelect,
 }: DownloadTypePickerProps) => {
 	const { t } = useTranslation();
+	const [open, setOpen] = useState(false);
 
 	return (
-		<Popover>
+		<Popover onOpenChange={setOpen} open={open}>
 			<PopoverTrigger asChild>
 				<button
 					className="inline-flex items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -50,7 +52,10 @@ export const DownloadTypePicker = ({
 							<Button
 								className="h-9 w-full justify-start px-2"
 								key={type}
-								onClick={() => onTypeSelect(type)}
+								onClick={() => {
+									onTypeSelect(type);
+									setOpen(false);
+								}}
 								size="sm"
 								variant={selectedType === type ? "secondary" : "ghost"}
 							>

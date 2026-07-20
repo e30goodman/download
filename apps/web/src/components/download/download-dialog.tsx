@@ -464,6 +464,11 @@ export function DownloadDialog({
 				addBrowserDownloadRecord(
 					createBrowserHandedOffRecord({
 						filename: `${result.video.title || "download"}.mp4`,
+						selectedFormat: {
+							formatId: "preset:original:mp4",
+							ext: "mp4",
+							formatNote: "Best quality",
+						},
 						thumbnail: result.video.thumbnail,
 						title: result.video.title,
 						type: "video",

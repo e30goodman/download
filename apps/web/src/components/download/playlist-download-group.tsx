@@ -3,7 +3,7 @@ import { Progress } from "@vidbee/ui/components/ui/progress";
 import { ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { RowFormatSelection } from "../../lib/row-format-presets";
+import type { RowFormatSelection, RowVideoContainer } from "../../lib/row-format-presets";
 import { DownloadItem } from "./download-item";
 import type { DownloadRecord } from "./types";
 
@@ -25,6 +25,10 @@ interface PlaylistDownloadGroupProps {
 	) => void;
 	onTypeChange?: (download: DownloadRecord, type: DownloadRecord["type"]) => void;
 	onStartDownload?: (download: DownloadRecord) => void;
+	onContainerChange?: (
+		download: DownloadRecord,
+		container: RowVideoContainer,
+	) => void;
 }
 
 const STORAGE_KEY_PREFIX = "playlist_expanded_";
@@ -66,6 +70,7 @@ export function PlaylistDownloadGroup({
 	onFormatChange,
 	onTypeChange,
 	onStartDownload,
+	onContainerChange,
 }: PlaylistDownloadGroupProps) {
 	const { t } = useTranslation();
 	const [isExpanded, setIsExpanded] = useState(() =>
@@ -203,6 +208,7 @@ export function PlaylistDownloadGroup({
 								onTypeChange={onTypeChange}
 								onToggleSelect={onToggleSelect}
 								onStartDownload={onStartDownload}
+								onContainerChange={onContainerChange}
 							/>
 						</div>
 					))}

@@ -45,7 +45,6 @@ import {
 	FolderOpen,
 	Loader2,
 	RotateCw,
-	Send,
 	Share2,
 	Trash2,
 	X,
@@ -65,7 +64,9 @@ import { resolveImageProxyUrl } from "../../lib/remote-image-proxy";
 import {
 	getRowFormatDisplay,
 	inferRowFormatPreset,
+	inferVideoContainerFromDownload,
 	type RowFormatSelection,
+	type RowVideoContainer,
 } from "../../lib/row-format-presets";
 import { buildShareDownloadUrlFromRecord } from "../../lib/share-download-link";
 import { siteConfig } from "../../lib/site-config";
@@ -88,6 +89,10 @@ interface DownloadItemProps {
 	) => void;
 	onTypeChange?: (download: DownloadRecord, type: DownloadRecord["type"]) => void;
 	onStartDownload?: (download: DownloadRecord) => void;
+	onContainerChange?: (
+		download: DownloadRecord,
+		container: RowVideoContainer,
+	) => void;
 }
 
 interface MetadataDetail {
@@ -206,7 +211,7 @@ const getStatusText = (
 		case "cancelled":
 			return t("download.cancelled");
 		case "handed-off":
-			return t("download.handedOff");
+			return "";
 		default:
 			return "";
 	}
@@ -226,7 +231,7 @@ const getStatusIcon = (status: DownloadRecord["status"]) => {
 		case "cancelled":
 			return <X className="h-4 w-4 text-muted-foreground" />;
 		case "handed-off":
-			return <Send className="h-4 w-4 text-sky-500" />;
+			return null;
 		default:
 			return null;
 	}
@@ -253,22 +258,6 @@ const resolveDownloadExtension = (download: DownloadRecord): string => {
 			: "mp4";
 };
 
-const getTypeBadgeLabel = (
-	type: DownloadRecord["type"],
-	t: (key: string) => string,
-): string | null => {
-	switch (type) {
-		case "video":
-			return t("download.video");
-		case "audio":
-			return t("download.audio");
-		case "text":
-			return t("download.text");
-		default:
-			return null;
-	}
-};
-
 export function DownloadItem({
 	download,
 	isSelected = false,
@@ -280,6 +269,7 @@ export function DownloadItem({
 	onFormatChange,
 	onTypeChange,
 	onStartDownload,
+	onContainerChange,
 }: DownloadItemProps) {
 	const { t } = useTranslation();
 	const [isCancelling, setIsCancelling] = useState(false);
@@ -294,6 +284,7 @@ export function DownloadItem({
 	const formatLabelValue =
 		rowFormatDisplay.formatLabel ?? getFormatLabel(download);
 	const selectedRowPreset = inferRowFormatPreset(download);
+	const selectedRowContainer = inferVideoContainerFromDownload(download);
 	const platformLabel = resolvePlatformLabel({
 		channel: download.channel,
 		url: download.url,
@@ -946,15 +937,6 @@ export function DownloadItem({
 										<p className="line-clamp-1 flex-1 font-medium text-sm">
 											{download.title || download.url}
 										</p>
-										{isBrowserHandoff && (
-											<Badge
-												className="shrink-0 gap-1 px-1.5 py-0.5 text-[10px]"
-												variant="outline"
-											>
-												<Send className="h-3 w-3 text-sky-500" />
-												{t("download.handedOff")}
-											</Badge>
-										)}
 									</div>
 									<div className="flex w-full flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
 										{statusIcon && (
@@ -1037,10 +1019,14 @@ export function DownloadItem({
 												<DownloadFormatPicker
 													disabled={!canChangeFormat}
 													formatLabel={formatLabelValue}
+													onContainerSelect={(container) => {
+														onContainerChange?.(download, container);
+													}}
 													onFormatSelect={(selection) => {
 														onFormatChange?.(download, selection);
 													}}
 													qualityLabel={qualityLabel}
+													selectedContainer={selectedRowContainer}
 													selectedPreset={selectedRowPreset}
 													type={download.type}
 												/>
