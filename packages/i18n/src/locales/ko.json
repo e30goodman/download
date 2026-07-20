@@ -228,7 +228,8 @@
     },
     "formatFallbackTitle": "Selected format unavailable",
     "formatFallbackHint": "Your pick was not deliverable, so VidBee fell back to best available ({{resolved}}).",
-    "chooseFormat": "형식 선택"
+    "chooseFormat": "형식 선택",
+    "chooseType": "유형 선택"
   },
   "error": {
     "title": "문제가 발생했습니다",

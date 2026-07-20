@@ -48,6 +48,7 @@ import { readOrpcDownloadSettings } from "../../lib/orpc-download-settings";
 import { readWebSettings } from "../../lib/web-settings";
 import {
 	buildFormatSelectorFromPreset,
+	getDefaultRowPresetForType,
 	type RowFormatSelection,
 } from "../../lib/row-format-presets";
 import { buildSingleVideoFormatSelector } from "../../lib/video-format-selector";
@@ -745,6 +746,51 @@ export const DownloadPage = () => {
 		}
 	};
 
+	const handleTypeChange = async (
+		download: DownloadRecord,
+		type: DownloadRecord["type"],
+	) => {
+		if (download.entryType === "browser" || !download.url) {
+			return;
+		}
+
+		try {
+			const presetFormats = buildFormatSelectorFromPreset({
+				type,
+				preset: getDefaultRowPresetForType(type),
+			});
+
+			await orpcClient.downloads.create({
+				url: download.url,
+				type,
+				title: download.title,
+				thumbnail: download.thumbnail,
+				duration: download.duration,
+				description: download.description,
+				channel: download.channel,
+				uploader: download.uploader,
+				viewCount: download.viewCount,
+				tags: download.tags,
+				playlistId: download.playlistId,
+				playlistTitle: download.playlistTitle,
+				playlistIndex: download.playlistIndex,
+				playlistSize: download.playlistSize,
+				format: presetFormats.format,
+				audioFormat: presetFormats.audioFormat,
+				settings: readOrpcDownloadSettings(),
+			});
+			if (download.entryType === "history") {
+				await orpcClient.history.removeItems({ ids: [download.id] });
+				pruneSelectedIds([download.id]);
+			}
+			toast.success(t("download.addedToQueue"));
+			await refreshData();
+		} catch (error) {
+			console.error("Failed to change download type:", error);
+			toast.error(t("notifications.downloadFailed"));
+		}
+	};
+
 	const handleRemoveHistoryRecord = async (id: string) => {
 		const record = allRecords.find((item) => item.id === id);
 		if (record?.entryType === "browser") {
@@ -838,6 +884,7 @@ export const DownloadPage = () => {
 												onFormatChange={handleFormatChange}
 												onRemove={handleRemoveHistoryRecord}
 												onRetry={handleRetryDownload}
+											onTypeChange={handleTypeChange}
 												onToggleSelect={handleToggleSelect}
 											/>
 										);
@@ -858,6 +905,7 @@ export const DownloadPage = () => {
 											onDeletePlaylist={handleRequestDeletePlaylist}
 											onRemove={handleRemoveHistoryRecord}
 											onRetry={handleRetryDownload}
+										onTypeChange={handleTypeChange}
 											onToggleSelect={handleToggleSelect}
 											records={group.records}
 											selectedIds={selectedIds}

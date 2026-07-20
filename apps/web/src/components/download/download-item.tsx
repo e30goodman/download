@@ -71,6 +71,7 @@ import { buildShareDownloadUrlFromRecord } from "../../lib/share-download-link";
 import { siteConfig } from "../../lib/site-config";
 import { readWebSettings } from "../../lib/web-settings";
 import { DownloadFormatPicker } from "./download-format-picker";
+import { DownloadTypePicker } from "./download-type-picker";
 import type { DownloadRecord } from "./types";
 
 interface DownloadItemProps {
@@ -85,6 +86,7 @@ interface DownloadItemProps {
 		download: DownloadRecord,
 		selection: RowFormatSelection,
 	) => void;
+	onTypeChange?: (download: DownloadRecord, type: DownloadRecord["type"]) => void;
 }
 
 interface MetadataDetail {
@@ -275,6 +277,7 @@ export function DownloadItem({
 	onRemove,
 	onCopyUrl,
 	onFormatChange,
+	onTypeChange,
 }: DownloadItemProps) {
 	const { t } = useTranslation();
 	const [isCancelling, setIsCancelling] = useState(false);
@@ -596,6 +599,9 @@ export function DownloadItem({
 			!isBrowserHandoff &&
 			!isInProgressStatus &&
 			download.url?.trim(),
+	);
+	const canChangeType = Boolean(
+		onTypeChange && !isBrowserHandoff && !isInProgressStatus && download.url?.trim(),
 	);
 	const canDeleteRecord = Boolean(onRemove);
 	const showTrashAction = canDeleteRecord && !isInProgressStatus;
@@ -937,14 +943,25 @@ export function DownloadItem({
 										<p className="line-clamp-1 flex-1 font-medium text-sm">
 											{download.title || download.url}
 										</p>
-										{typeBadgeLabel && (
-											<Badge
-												className="shrink-0 px-1.5 py-0.5 text-[10px]"
-												variant="secondary"
-											>
-												{typeBadgeLabel}
-											</Badge>
-										)}
+										{typeBadgeLabel &&
+											(canChangeType ? (
+												<DownloadTypePicker
+													disabled={!canChangeType}
+													onTypeSelect={(type) => {
+														if (type !== download.type) {
+															onTypeChange?.(download, type);
+														}
+													}}
+													selectedType={download.type}
+												/>
+											) : (
+												<Badge
+													className="shrink-0 px-1.5 py-0.5 text-[10px]"
+													variant="secondary"
+												>
+													{typeBadgeLabel}
+												</Badge>
+											))}
 										{isBrowserHandoff && (
 											<Badge
 												className="shrink-0 gap-1 px-1.5 py-0.5 text-[10px]"

@@ -228,7 +228,8 @@
       "subscription": "Subscription"
     },
     "formatFallbackTitle": "Selected format unavailable",
-    "formatFallbackHint": "Your pick wasn't deliverable, so VidBee fell back to best available ({{resolved}}). Try clearing browser cookies or picking a non-premium tier."
+    "formatFallbackHint": "Your pick wasn't deliverable, so VidBee fell back to best available ({{resolved}}). Try clearing browser cookies or picking a non-premium tier.",
+    "chooseType": "Choose type"
   },
   "error": {
     "title": "Something went wrong",

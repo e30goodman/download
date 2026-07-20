@@ -13,7 +13,7 @@ import { Input } from "@vidbee/ui/components/ui/input";
 import { Label } from "@vidbee/ui/components/ui/label";
 import { useAddUrlInteraction } from "@vidbee/ui/lib/use-add-url-interaction";
 import { useAddUrlShortcut } from "@vidbee/ui/lib/use-add-url-shortcut";
-import { FileText, FolderOpen, Loader2, Music2, Video } from "lucide-react";
+import { FolderOpen, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -499,21 +499,6 @@ export function DownloadDialog({
 		setOpen(false);
 	}, [startOneClickDownload, url]);
 
-	const handleQuickDownloadTypeChange = useCallback(
-		(type: DownloadType) => {
-			updateSettings({ oneClickDownloadType: type });
-			if (type === "video" || type === "audio") {
-				setSingleVideoState((previousState) => ({
-					...previousState,
-					activeTab: type,
-					selectedAudioFormat: "",
-					selectedVideoFormat: "",
-				}));
-			}
-		},
-		[updateSettings],
-	);
-
 	const quickDownloadConfirmLabel =
 		settings.oneClickDownloadType === "text"
 			? t("download.downloadText")
@@ -523,50 +508,6 @@ export function DownloadDialog({
 
 	const skipFormatPicker =
 		settings.oneClickDownload || settings.oneClickDownloadType === "text";
-
-	const typeToggle = (
-		<div className="flex shrink-0 gap-0.5 rounded-md bg-muted p-0.5">
-			<Button
-				aria-pressed={settings.oneClickDownloadType === "video"}
-				className="h-7 flex-1 gap-1.5 px-2 text-xs"
-				onClick={() => handleQuickDownloadTypeChange("video")}
-				size="sm"
-				type="button"
-				variant={
-					settings.oneClickDownloadType === "video" ? "secondary" : "ghost"
-				}
-			>
-				<Video className="h-3.5 w-3.5" />
-				{t("download.video")}
-			</Button>
-			<Button
-				aria-pressed={settings.oneClickDownloadType === "audio"}
-				className="h-7 flex-1 gap-1.5 px-2 text-xs"
-				onClick={() => handleQuickDownloadTypeChange("audio")}
-				size="sm"
-				type="button"
-				variant={
-					settings.oneClickDownloadType === "audio" ? "secondary" : "ghost"
-				}
-			>
-				<Music2 className="h-3.5 w-3.5" />
-				{t("download.audio")}
-			</Button>
-			<Button
-				aria-pressed={settings.oneClickDownloadType === "text"}
-				className="h-7 flex-1 gap-1.5 px-2 text-xs"
-				onClick={() => handleQuickDownloadTypeChange("text")}
-				size="sm"
-				type="button"
-				variant={
-					settings.oneClickDownloadType === "text" ? "secondary" : "ghost"
-				}
-			>
-				<FileText className="h-3.5 w-3.5" />
-				{t("download.text")}
-			</Button>
-		</div>
-	);
 
 	const handlePreviewPlaylist = useCallback(async () => {
 		if (!playlistUrl.trim()) {
@@ -856,7 +797,6 @@ export function DownloadDialog({
 					confirmLabel={
 						skipFormatPicker ? quickDownloadConfirmLabel : t("download.fetch")
 					}
-					extra={typeToggle}
 					invalidMessage={
 						hasAddUrlValue && !canConfirmAddUrl
 							? t("errors.invalidUrl")
@@ -905,7 +845,6 @@ export function DownloadDialog({
 
 						{activeTab === "single" && !videoInfo && !loading && (
 							<div className="flex flex-wrap items-center gap-2">
-								{typeToggle}
 								<div className="relative w-[280px] max-w-full">
 									<Input
 										className="h-8 pr-8 text-xs"
@@ -948,9 +887,7 @@ export function DownloadDialog({
 										disabled={loading || !selectedSingleFormat}
 										onClick={handleSingleVideoDownload}
 									>
-										{singleVideoState.activeTab === "video"
-											? t("download.downloadVideo")
-											: t("download.downloadAudio")}
+										{t("download.startDownload")}
 									</Button>
 								) : null
 							) : (

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	buildFormatSelectorFromPreset,
+	getDefaultRowPresetForType,
 	getRowFormatOptions,
 	inferRowFormatPreset,
 } from "./row-format-presets";
@@ -46,5 +47,11 @@ describe("row format presets", () => {
 				selectedFormat: { formatId: "137", ext: "mp4", height: 1080 },
 			}),
 		).toBe("1080");
+	});
+
+	it("returns default preset per download type", () => {
+		expect(getDefaultRowPresetForType("video")).toBe("original");
+		expect(getDefaultRowPresetForType("audio")).toBe("mp3");
+		expect(getDefaultRowPresetForType("text")).toBe("txt");
 	});
 });

@@ -228,7 +228,8 @@
     },
     "formatFallbackTitle": "Selected format unavailable",
     "formatFallbackHint": "Your pick was not deliverable, so VidBee fell back to best available ({{resolved}}).",
-    "chooseFormat": "選擇格式"
+    "chooseFormat": "選擇格式",
+    "chooseType": "選擇類型"
   },
   "error": {
     "title": "發生錯誤",

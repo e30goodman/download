@@ -228,7 +228,8 @@
     },
     "formatFallbackTitle": "Selected format unavailable",
     "formatFallbackHint": "Your pick was not deliverable, so VidBee fell back to best available ({{resolved}}).",
-    "chooseFormat": "Choisir le format"
+    "chooseFormat": "Choisir le format",
+    "chooseType": "Choisir le type"
   },
   "error": {
     "title": "Un problème est survenu",

@@ -65,6 +65,18 @@ export const getRowFormatOptions = (type: DownloadType): RowFormatOption[] => {
 	}));
 };
 
+export const getDefaultRowPresetForType = (
+	type: DownloadType,
+): RowFormatPreset => {
+	if (type === "video") {
+		return "original";
+	}
+	if (type === "audio") {
+		return "mp3";
+	}
+	return "txt";
+};
+
 export const getRowFormatPresetLabel = (
 	type: DownloadType,
 	preset: RowFormatPreset,
