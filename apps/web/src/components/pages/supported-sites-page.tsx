@@ -23,12 +23,6 @@ export const SupportedSitesPage = () => {
 					<h1 className="font-semibold text-2xl tracking-tight">
 						{t("sites.pageTitle")}
 					</h1>
-					<p className="max-w-3xl text-muted-foreground text-sm">
-						{t("sites.pageDescription")}
-					</p>
-					<p className="max-w-3xl text-muted-foreground text-sm">
-						{t("sites.pageIntro")}
-					</p>
 				</div>
 
 				<section className="space-y-4">
