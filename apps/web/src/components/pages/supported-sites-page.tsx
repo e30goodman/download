@@ -36,7 +36,6 @@ export const SupportedSitesPage = () => {
 				</div>
 
 				<section className="space-y-4">
-					<h2 className="font-medium text-lg">{t("sites.popularSection")}</h2>
 					<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 						{POPULAR_SITE_KEYS.map((siteKey) => (
 							<Card className="h-full" key={siteKey}>
