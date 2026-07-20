@@ -71,7 +71,7 @@ const renderSidebarItem = (item: AppSidebarItem) => {
 }
 
 export function AppSidebar({
-  appName = 'App',
+  appName: _appName = 'App',
   logoSrc = './app-icon.png',
   logoAlt = 'App icon',
   className,
@@ -89,9 +89,6 @@ export function AppSidebar({
         <div className="flex h-12 w-12 items-center justify-center">
           <img alt={logoAlt} className="h-10 w-10" src={logoSrc} />
         </div>
-        <span className="text-center font-bold text-muted-foreground text-xs leading-tight">
-          {appName}
-        </span>
       </div>
 
       {items.map((item) => renderSidebarItem(item))}
