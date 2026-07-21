@@ -889,6 +889,13 @@ export const DownloadPage = () => {
 			return;
 		}
 		startingBrowserDownloadIdsRef.current.add(download.id);
+		setAllRecords((current) =>
+			current.map((record) =>
+				record.entryType === "browser" && record.id === download.id
+					? { ...record, status: "processing" }
+					: record,
+			),
+		);
 
 		try {
 			const preset = inferRowFormatPreset(download);
@@ -943,6 +950,13 @@ export const DownloadPage = () => {
 			await refreshData();
 		} catch (error) {
 			console.error("Failed to start queued browser download:", error);
+			setAllRecords((current) =>
+				current.map((record) =>
+					record.entryType === "browser" && record.id === download.id
+						? { ...record, status: download.status }
+						: record,
+				),
+			);
 			const rawMessage =
 				error instanceof Error ? error.message : "";
 			toast.error(

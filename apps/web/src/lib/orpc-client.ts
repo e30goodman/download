@@ -65,20 +65,28 @@ const resolveRpcBaseUrl = async (): Promise<string> => {
 	return fallbackApiUrl;
 };
 
-const rpcFetch = async (
+export const rpcFetch = async (
 	request: Request,
 	init: { redirect?: RequestRedirect },
 ): Promise<Response> => {
 	let lastError: unknown;
+	const requestTemplate = request.clone();
 	for (let attempt = 0; attempt < RPC_FETCH_ATTEMPTS; attempt++) {
+		if (requestTemplate.signal.aborted) {
+			throw requestTemplate.signal.reason;
+		}
 		try {
 			const baseUrl = await resolveRpcBaseUrl();
 			const rewritten = new Request(
 				request.url.replace(/^https?:\/\/[^/]+/, baseUrl),
-				request,
+				requestTemplate.clone(),
 			);
 			const response = await globalThis.fetch(rewritten, init);
-			if (response.ok || response.status < 500 || attempt === RPC_FETCH_ATTEMPTS - 1) {
+			if (
+				response.ok ||
+				response.status < 500 ||
+				attempt === RPC_FETCH_ATTEMPTS - 1
+			) {
 				return response;
 			}
 		} catch (error) {
