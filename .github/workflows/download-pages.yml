@@ -48,6 +48,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Sync current API endpoint
+        run: cp api-endpoint.json apps/web/public/api-endpoint.json
+
       - name: Build static site
         run: pnpm --filter ./apps/web run build:pages
 

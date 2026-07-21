@@ -6,6 +6,11 @@ let cachedApiUrl = "";
 let cachedAt = 0;
 let inflight: Promise<string> | null = null;
 
+interface ApiEndpoint {
+	url: string;
+	updatedAt: number;
+}
+
 const normalizeApiUrl = (value: string | undefined | null): string => {
 	const trimmed = value?.trim() ?? "";
 	if (!trimmed) {
@@ -17,16 +22,35 @@ const normalizeApiUrl = (value: string | undefined | null): string => {
 const readEndpointPayload = async (
 	url: string,
 	fetchImpl: typeof fetch,
-): Promise<string> => {
+): Promise<ApiEndpoint | null> => {
 	const response = await fetchImpl(url, {
 		cache: "no-store",
 		headers: { Accept: "application/json" },
 	});
 	if (!response.ok) {
-		return "";
+		return null;
 	}
-	const payload = (await response.json()) as { url?: unknown };
-	return typeof payload.url === "string" ? normalizeApiUrl(payload.url) : "";
+	const payload = (await response.json()) as {
+		url?: unknown;
+		updatedAt?: unknown;
+	};
+	if (typeof payload.url !== "string") {
+		return null;
+	}
+
+	const normalizedUrl = normalizeApiUrl(payload.url);
+	if (!normalizedUrl) {
+		return null;
+	}
+
+	const updatedAt =
+		typeof payload.updatedAt === "string"
+			? Date.parse(payload.updatedAt)
+			: Number.NaN;
+	return {
+		url: normalizedUrl,
+		updatedAt: Number.isFinite(updatedAt) ? updatedAt : 0,
+	};
 };
 
 const resolveFromSources = async (
@@ -36,25 +60,32 @@ const resolveFromSources = async (
 	const candidates: string[] = [];
 
 	if (typeof window !== "undefined") {
-		const basePath = (import.meta.env.VITE_BASE_PATH ?? "/").replace(/\/?$/, "/");
-		candidates.push(new URL("api-endpoint.json", `${window.location.origin}${basePath}`).href);
+		const basePath = (import.meta.env.VITE_BASE_PATH ?? "/").replace(
+			/\/?$/,
+			"/",
+		);
+		candidates.push(
+			new URL("api-endpoint.json", `${window.location.origin}${basePath}`).href,
+		);
 		candidates.push(new URL("api-endpoint.json", window.location.href).href);
 	}
 
 	candidates.push(`${RAW_ENDPOINT_URL}?t=${Date.now()}`);
 
-	for (const candidate of candidates) {
-		try {
-			const resolved = await readEndpointPayload(candidate, fetchImpl);
-			if (resolved) {
-				return resolved;
+	const endpoints = await Promise.all(
+		candidates.map(async (candidate) => {
+			try {
+				return await readEndpointPayload(candidate, fetchImpl);
+			} catch {
+				return null;
 			}
-		} catch {
-			// Try the next candidate.
-		}
-	}
+		}),
+	);
+	const newestEndpoint = endpoints
+		.filter((endpoint): endpoint is ApiEndpoint => endpoint !== null)
+		.sort((left, right) => right.updatedAt - left.updatedAt)[0];
 
-	return normalizeApiUrl(fallbackUrl);
+	return newestEndpoint?.url ?? normalizeApiUrl(fallbackUrl);
 };
 
 export const getCachedApiUrl = (fallbackUrl: string): string =>
