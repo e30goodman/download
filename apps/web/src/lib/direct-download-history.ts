@@ -32,8 +32,10 @@ export type BrowserHistoryRemovalResult =
 
 const BROWSER_RECORD_ID_PATTERN =
 	/^browser:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+// Match exact sensitive param names. Avoid bare "key" matching CDN fields
+// like Instagram's "ig_cache_key".
 const SENSITIVE_QUERY_KEY =
-	/(?:^|[_-])(?:access-token|acl|auth|authorization|credential|expires?|googleaccessid|awsaccesskeyid|hdnea|hdnts|hmac|jwt|key|key-pair-id|policy|se|sig|signature|signed|sp|sr|sv|token|x-amz|x-goog)(?:$|[_-])/iu;
+	/^(?:access[_-]?token|acl|auth|authorization|credential|expires?|googleaccessid|awsaccesskeyid|hdnea|hdnts|hmac|jwt|key|key-pair-id|policy|se|sig|signature|signed|sp|sr|sv|token|x-amz(?:-.+)?|x-goog(?:-.+)?)$/iu;
 const STRING_FORMAT_FIELDS = [
 	"formatId",
 	"ext",
@@ -164,7 +166,9 @@ const parseBrowserRecord = (
 	if (typeof source.title === "string") {
 		record.title = source.title.slice(0, 1000);
 	}
-	if (isPublicHttpUrl(source.thumbnail, { rejectSensitiveQuery: true })) {
+	// Keep signed CDN thumbnails (Instagram uses ig_cache_key/oh/oe).
+	// Rejecting "sensitive" query keys stripped every Instagram preview.
+	if (isPublicHttpUrl(source.thumbnail)) {
 		record.thumbnail = source.thumbnail;
 	}
 	if (typeof source.savedFileName === "string") {

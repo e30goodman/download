@@ -130,6 +130,8 @@ describe("direct download history storage", () => {
 		const storage = new MemoryStorage();
 		const directUrl =
 			"https://cdn.example/video.mp4?token=secret&expires=tomorrow";
+		const thumbnailUrl =
+			"https://scontent.cdninstagram.com/v/t51/thumb.jpg?stp=dst-jpg&ig_cache_key=abc&oh=cdn-sig&oe=expiry";
 
 		for (
 			let index = 0;
@@ -142,7 +144,7 @@ describe("direct download history storage", () => {
 				id: makeBrowserId(index),
 				url: `https://videos.example.com/watch/${index}?list=ok&token=page-secret`,
 				title: `Video ${index}`,
-				thumbnail: "https://images.example/thumb.jpg?signature=secret",
+				thumbnail: thumbnailUrl,
 				type: "video" as const,
 				selectedFormat: {
 					acodec: "mp4a",
@@ -166,11 +168,31 @@ describe("direct download history storage", () => {
 		expect(records[0]?.url).toBe(
 			"https://videos.example.com/watch/104?list=ok",
 		);
-		expect(records[0]?.thumbnail).toBeUndefined();
+		expect(records[0]?.thumbnail).toBe(thumbnailUrl);
 		const raw = storage.getItem(DIRECT_DOWNLOAD_HISTORY_STORAGE_KEY) ?? "";
 		expect(raw).not.toContain(directUrl);
 		expect(raw).not.toContain("Authorization");
-		expect(raw).not.toContain("secret");
+		expect(raw).not.toContain("page-secret");
+		expect(raw).toContain("ig_cache_key");
+	});
+
+	it("keeps Instagram CDN thumbnails with signed query params", () => {
+		const storage = new MemoryStorage();
+		const thumbnail =
+			"https://scontent-zrh1-1.cdninstagram.com/v/t51.82787-15/thumb.jpg?stp=dst-jpg_e15_tt6&ig_cache_key=abc.3-ccb7-5&oh=00_AQD&oe=6A6859A0";
+		addBrowserDownloadRecord(
+			createBrowserHandedOffRecord({
+				filename: "video.mp4",
+				id: makeBrowserId(1),
+				thumbnail,
+				title: "Video by creator",
+				type: "video",
+				url: "https://www.instagram.com/p/Da8B-sGzz7W/",
+			}),
+			storage,
+		);
+
+		expect(readBrowserDownloadHistory(storage)[0]?.thumbnail).toBe(thumbnail);
 	});
 
 	it("removes only requested browser records", () => {
