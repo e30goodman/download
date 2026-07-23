@@ -14,12 +14,20 @@ $apiPort = 3110
 $adminPort = 3111
 $pollIntervalSeconds = 20
 $tunnelFailureThreshold = 4
-$apiFailureThreshold = 3
+$apiFailureThreshold = 2
+$apiSuccessClearThreshold = 3
+$apiFailureWindowMinutes = 10
+$apiHealthTimeoutSec = 5
+$apiSlowMs = 2500
 $apiWarmupSeconds = 45
+$sleepGapSeconds = 120
 
 $script:tunnelFailureCount = 0
 $script:apiFailureCount = 0
+$script:apiSuccessStreak = 0
+$script:apiFailureWindowStart = $null
 $script:skipTunnelChecksUntil = [datetime]::MinValue
+$script:lastLoopAt = Get-Date
 
 function Write-SupervisorLog {
 	param([string]$Message)
@@ -68,14 +76,64 @@ function Start-HiddenPowerShell {
 	) | Out-Null
 }
 
-function Test-Api {
+function Test-ApiHealth {
+	param([int]$TimeoutSec = $apiHealthTimeoutSec)
+
+	$sw = [System.Diagnostics.Stopwatch]::StartNew()
 	try {
-		$response = Invoke-RestMethod -Uri "http://127.0.0.1:$apiPort/health" -TimeoutSec 4
-		return $response.ok -eq $true
+		$curlOutput = & curl.exe --silent --show-error --fail --max-time $TimeoutSec `
+			"http://127.0.0.1:$apiPort/health" 2>$null
+		$sw.Stop()
+		if ($LASTEXITCODE -ne 0) {
+			return @{ Ok = $false; ElapsedMs = [int]$sw.ElapsedMilliseconds }
+		}
+		$response = $curlOutput | ConvertFrom-Json
+		return @{
+			Ok = ($response.ok -eq $true)
+			ElapsedMs = [int]$sw.ElapsedMilliseconds
+		}
 	}
 	catch {
-		return $false
+		$sw.Stop()
+		return @{ Ok = $false; ElapsedMs = [int]$sw.ElapsedMilliseconds }
 	}
+}
+
+function Test-Api {
+	return (Test-ApiHealth).Ok
+}
+
+function Reset-ApiFailureState {
+	$script:apiFailureCount = 0
+	$script:apiSuccessStreak = 0
+	$script:apiFailureWindowStart = $null
+}
+
+function Register-ApiFailure {
+	param([string]$Reason = "health check failed")
+
+	$now = Get-Date
+	if (
+		($null -eq $script:apiFailureWindowStart) -or
+		(($now - $script:apiFailureWindowStart).TotalMinutes -gt $apiFailureWindowMinutes)
+	) {
+		$script:apiFailureWindowStart = $now
+		$script:apiFailureCount = 0
+	}
+
+	$script:apiFailureCount += 1
+	$script:apiSuccessStreak = 0
+	Write-SupervisorLog "API $Reason ($script:apiFailureCount/$apiFailureThreshold)."
+}
+
+function Register-ApiSuccess {
+	$script:apiSuccessStreak += 1
+	if ($script:apiFailureCount -gt 0 -and $script:apiSuccessStreak -lt $apiSuccessClearThreshold) {
+		Write-SupervisorLog "API healthy but keeping failure count ($script:apiFailureCount) until $apiSuccessClearThreshold consecutive successes ($script:apiSuccessStreak/$apiSuccessClearThreshold)."
+		return
+	}
+
+	Reset-ApiFailureState
 }
 
 function Restart-Api {
@@ -87,9 +145,9 @@ function Restart-Api {
 
 	for ($attempt = 0; $attempt -lt 30; $attempt++) {
 		Start-Sleep -Seconds 2
-		if (Test-Api) {
+		if ((Test-ApiHealth).Ok) {
 			Write-SupervisorLog "API is healthy."
-			$script:apiFailureCount = 0
+			Reset-ApiFailureState
 			$script:skipTunnelChecksUntil = (Get-Date).AddSeconds($apiWarmupSeconds)
 			Write-SupervisorLog "Skipping tunnel health checks for ${apiWarmupSeconds}s after API restart."
 			return $true
@@ -101,18 +159,25 @@ function Restart-Api {
 }
 
 function Ensure-Api {
-	if (Test-Api) {
-		$script:apiFailureCount = 0
+	param([switch]$ForceRestartIfSlow)
+
+	$health = Test-ApiHealth
+	if ($health.Ok) {
+		if ($ForceRestartIfSlow -and $health.ElapsedMs -gt $apiSlowMs) {
+			Write-SupervisorLog "API responding slowly after resume ($($health.ElapsedMs)ms > ${apiSlowMs}ms); restarting."
+			return Restart-Api
+		}
+
+		Register-ApiSuccess
 		return $true
 	}
 
-	$script:apiFailureCount += 1
-	Write-SupervisorLog "API health check failed ($script:apiFailureCount/$apiFailureThreshold)."
+	Register-ApiFailure
 	if ($script:apiFailureCount -lt $apiFailureThreshold) {
 		return $false
 	}
 
-	$script:apiFailureCount = 0
+	Reset-ApiFailureState
 	return Restart-Api
 }
 
@@ -232,8 +297,25 @@ function Ensure-Tunnel {
 		return $tunnelUrl
 	}
 
+	# Prefer fixing a hung/dead API before rotating the tunnel URL.
+	if ($process -and $tunnelUrl) {
+		$localApi = Test-ApiHealth
+		if (-not $localApi.Ok) {
+			Write-SupervisorLog "Tunnel process alive but local API unhealthy; restarting API before rotating tunnel."
+			if (Restart-Api) {
+				Start-Sleep -Seconds 3
+				if (Test-RemoteHealth -Url $tunnelUrl) {
+					$script:tunnelFailureCount = 0
+					Write-SupervisorLog "Same tunnel URL healthy after API restart: $tunnelUrl"
+					return $tunnelUrl
+				}
+				Write-SupervisorLog "Tunnel still unhealthy after API restart; will evaluate tunnel restart."
+			}
+		}
+	}
+
 	# Process alive but remote health flaky while local API is up — tolerate briefly.
-	if ($process -and $tunnelUrl -and (Test-Api)) {
+	if ($process -and $tunnelUrl -and (Test-ApiHealth).Ok) {
 		$script:tunnelFailureCount += 1
 		Write-SupervisorLog "Live tunnel health check failed ($script:tunnelFailureCount/$tunnelFailureThreshold) for $tunnelUrl (process still running)."
 		if ($script:tunnelFailureCount -lt $tunnelFailureThreshold) {
@@ -348,12 +430,29 @@ if (-not (Test-SingleInstance)) {
 Write-SupervisorLog "Supervisor started (pid=$PID)."
 try {
 	while ($true) {
-		if (Ensure-Api) {
+		$now = Get-Date
+		$gapSeconds = ($now - $script:lastLoopAt).TotalSeconds
+		$script:lastLoopAt = $now
+		$resumedFromSleep = $gapSeconds -gt $sleepGapSeconds
+
+		if ($resumedFromSleep) {
+			Write-SupervisorLog "Detected resume/sleep gap of $([int]$gapSeconds)s; forcing health recheck."
+			$script:tunnelFailureCount = 0
+			$apiOk = Ensure-Api -ForceRestartIfSlow
+			if ($apiOk) {
+				$tunnelUrl = Ensure-Tunnel
+				if ($tunnelUrl) {
+					Publish-TunnelUrl -Url $tunnelUrl
+				}
+			}
+		}
+		elseif (Ensure-Api) {
 			$tunnelUrl = Ensure-Tunnel
 			if ($tunnelUrl) {
 				Publish-TunnelUrl -Url $tunnelUrl
 			}
 		}
+
 		Start-Sleep -Seconds $pollIntervalSeconds
 	}
 }
