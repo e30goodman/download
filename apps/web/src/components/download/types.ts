@@ -31,14 +31,16 @@ export type BrowserDownloadRecord = {
 	id: string;
 	savedFileName?: string;
 	selectedFormat?: VideoFormat;
-	status: "handed-off";
+	status: "handed-off" | "processing";
 	thumbnail?: string;
 	title?: string;
 	type: DownloadType;
 	url: string;
 } & BrowserServerOnlyFields;
 
-export type BrowserHandedOffRecord = BrowserDownloadRecord;
+export type BrowserHandedOffRecord = Omit<BrowserDownloadRecord, "status"> & {
+	status: "handed-off";
+};
 
 export type DownloadRecord = ServerDownloadRecord | BrowserDownloadRecord;
 

@@ -169,10 +169,15 @@ export const DownloadPage = () => {
 				}),
 			);
 
-			setAllRecords(
+			setAllRecords(() =>
 				mergeDownloadRecords(
 					[...activeEntries, ...historyEntries],
 					readBrowserDownloadHistory(),
+				).map((record) =>
+					record.entryType === "browser" &&
+					startingBrowserDownloadIdsRef.current.has(record.id)
+						? { ...record, status: "processing" }
+						: record,
 				),
 			);
 			apiFailureCountRef.current = 0;
@@ -212,6 +217,11 @@ export const DownloadPage = () => {
 							record.entryType !== "browser",
 					),
 					readBrowserDownloadHistory(),
+				).map((record) =>
+					record.entryType === "browser" &&
+					startingBrowserDownloadIdsRef.current.has(record.id)
+						? { ...record, status: "processing" }
+						: record,
 				),
 			);
 			const rawMessage =
@@ -221,7 +231,7 @@ export const DownloadPage = () => {
 				? t("errors.apiUnreachable")
 				: /failed to fetch|networkerror|load failed|fetch failed/i.test(
 							rawMessage,
-					  )
+						)
 					? t("errors.apiUnreachable")
 					: rawMessage;
 			// Rate limits are transient; keep polling without sticking the red banner.
@@ -922,6 +932,7 @@ export const DownloadPage = () => {
 					: record,
 			),
 		);
+		const startingToastId = toast.loading(t("download.processing"));
 
 		try {
 			const preset = inferRowFormatPreset(download);
@@ -988,6 +999,7 @@ export const DownloadPage = () => {
 					: t("notifications.downloadFailed"),
 			);
 		} finally {
+			toast.dismiss(startingToastId);
 			startingBrowserDownloadIdsRef.current.delete(download.id);
 		}
 	};
