@@ -3,7 +3,6 @@ import { rm, stat } from 'node:fs/promises'
 import type { ServerResponse } from 'node:http'
 import path from 'node:path'
 import cors from '@fastify/cors'
-import rateLimit from '@fastify/rate-limit'
 import { OpenAPIHandler } from '@orpc/openapi/fastify'
 import { OpenAPIReferencePlugin } from '@orpc/openapi/plugins'
 import { RPCHandler } from '@orpc/server/fastify'
@@ -66,10 +65,7 @@ export const createApiServer = async () => {
     origin: isPublicSiteEnabled ? PUBLIC_SITE_ORIGIN : true,
     methods: ['GET', 'POST', 'OPTIONS']
   })
-  if (isPublicSiteEnabled) {
-    // Owner's open tab polls every 2s — a global rate limit just bans you from yourself.
-    // Keep the plugin registered off; re-enable later only on expensive mutate routes if needed.
-  }
+  // No global rate limit: the open tab polls every 2s and would ban the owner.
 
   const rpcHandler = new RPCHandler(rpcRouter)
   const subscriptionsRpcHandler = new RPCHandler(subscriptionsRouter)
