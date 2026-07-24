@@ -30,6 +30,8 @@ import {
 } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { ensureResolvedApiUrl } from "../../lib/api-endpoint";
+import { triggerBrowserDownload } from "../../lib/direct-download";
 import {
 	addBrowserDownloadRecord,
 	createBrowserHandedOffRecord,
@@ -37,8 +39,6 @@ import {
 	readBrowserDownloadHistory,
 	removeBrowserDownloadRecords,
 } from "../../lib/direct-download-history";
-import { ensureResolvedApiUrl } from "../../lib/api-endpoint";
-import { triggerBrowserDownload } from "../../lib/direct-download";
 import {
 	createBrowserBatchDownloadUrl,
 	createBrowserDownloadUrl,
@@ -46,14 +46,7 @@ import {
 	getEventsUrl,
 	orpcClient,
 } from "../../lib/orpc-client";
-import {
-	parseShareDownloadParams,
-	type ShareDownloadParams,
-} from "../../lib/share-download-link";
 import { readOrpcDownloadSettings } from "../../lib/orpc-download-settings";
-import { siteConfig } from "../../lib/site-config";
-import { waitForServerDownload } from "../../lib/wait-for-server-download";
-import { readWebSettings } from "../../lib/web-settings";
 import {
 	buildFormatSelectorFromPreset,
 	buildSelectedFormatForRowPreset,
@@ -65,7 +58,14 @@ import {
 	type RowFormatSelection,
 	type RowVideoContainer,
 } from "../../lib/row-format-presets";
+import {
+	parseShareDownloadParams,
+	type ShareDownloadParams,
+} from "../../lib/share-download-link";
+import { siteConfig } from "../../lib/site-config";
 import { buildSingleVideoFormatSelector } from "../../lib/video-format-selector";
+import { waitForServerDownload } from "../../lib/wait-for-server-download";
+import { readWebSettings } from "../../lib/web-settings";
 import { DownloadDialog } from "../download/download-dialog";
 import { DownloadItem } from "../download/download-item";
 import { PlaylistDownloadGroup } from "../download/playlist-download-group";
@@ -147,16 +147,14 @@ export const DownloadPage = () => {
 	const refreshData = useCallback(async () => {
 		const generation = refreshGenerationRef.current + 1;
 		refreshGenerationRef.current = generation;
-		try {
-			if (siteConfig.isPublicSite) {
-				await ensureResolvedApiUrl(getApiUrl());
-			}
+
+		const applyServerLists = async (): Promise<boolean> => {
 			const [downloadsResult, historyResult] = await Promise.all([
 				orpcClient.downloads.list(),
 				orpcClient.history.list(),
 			]);
 			if (generation !== refreshGenerationRef.current) {
-				return;
+				return false;
 			}
 
 			const activeEntries: ServerDownloadRecord[] =
@@ -181,10 +179,31 @@ export const DownloadPage = () => {
 			sseFailureCountRef.current = 0;
 			setIsApiReachable(true);
 			setApiConnectionMessage("");
+			return true;
+		};
+
+		try {
+			if (siteConfig.isPublicSite) {
+				await ensureResolvedApiUrl(getApiUrl());
+			}
+			await applyServerLists();
 		} catch (error) {
 			if (generation !== refreshGenerationRef.current) {
 				return;
 			}
+
+			if (siteConfig.isPublicSite) {
+				try {
+					await ensureResolvedApiUrl(getApiUrl(), { force: true });
+					if (await applyServerLists()) {
+						return;
+					}
+					return;
+				} catch {
+					// Fall through to unreachable handling below.
+				}
+			}
+
 			apiFailureCountRef.current += 1;
 			setAllRecords((current) =>
 				mergeDownloadRecords(
@@ -779,10 +798,7 @@ export const DownloadPage = () => {
 		}
 
 		const nextExt = getExtensionForPreset(type, preset, container);
-		const nextId =
-			download.entryType === "browser"
-				? download.id
-				: undefined;
+		const nextId = download.entryType === "browser" ? download.id : undefined;
 		const handedOffAt =
 			download.entryType === "browser" ? download.handedOffAt : Date.now();
 
@@ -840,7 +856,11 @@ export const DownloadPage = () => {
 		download: DownloadRecord,
 		container: RowVideoContainer,
 	) => {
-		if (!download.url || download.type !== "video" || download.entryType === "active") {
+		if (
+			!download.url ||
+			download.type !== "video" ||
+			download.entryType === "active"
+		) {
 			return;
 		}
 
@@ -920,8 +940,7 @@ export const DownloadPage = () => {
 			});
 			const taskId = created.download.id;
 			const filename =
-				download.savedFileName?.trim() ||
-				`${download.title || "download"}`;
+				download.savedFileName?.trim() || `${download.title || "download"}`;
 
 			removeBrowserDownloadRecords([download.id]);
 			await refreshData();
@@ -930,10 +949,7 @@ export const DownloadPage = () => {
 
 			if (waitResult === "completed") {
 				if (siteConfig.isPublicSite) {
-					triggerBrowserDownload(
-						createBrowserDownloadUrl(taskId),
-						filename,
-					);
+					triggerBrowserDownload(createBrowserDownloadUrl(taskId), filename);
 				}
 				toast.success(t("notifications.downloadCompleted"));
 				await refreshData();
@@ -957,8 +973,7 @@ export const DownloadPage = () => {
 						: record,
 				),
 			);
-			const rawMessage =
-				error instanceof Error ? error.message : "";
+			const rawMessage = error instanceof Error ? error.message : "";
 			toast.error(
 				/failed to fetch|networkerror|load failed|fetch failed/i.test(
 					rawMessage,

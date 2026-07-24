@@ -1,4 +1,5 @@
 const ENDPOINT_CACHE_TTL_MS = 30_000;
+const HEALTH_PROBE_TIMEOUT_MS = 4_000;
 const RAW_ENDPOINT_URL =
 	"https://raw.githubusercontent.com/e30goodman/download/main/api-endpoint.json";
 
@@ -53,6 +54,31 @@ const readEndpointPayload = async (
 	};
 };
 
+const probeApiHealth = async (
+	apiUrl: string,
+	fetchImpl: typeof fetch,
+): Promise<boolean> => {
+	const controller = new AbortController();
+	const timer = globalThis.setTimeout(() => {
+		controller.abort();
+	}, HEALTH_PROBE_TIMEOUT_MS);
+	try {
+		const response = await fetchImpl(`${apiUrl}/health`, {
+			cache: "no-store",
+			signal: controller.signal,
+		});
+		if (!response.ok) {
+			return false;
+		}
+		const payload = (await response.json()) as { ok?: unknown };
+		return payload.ok === true;
+	} catch {
+		return false;
+	} finally {
+		globalThis.clearTimeout(timer);
+	}
+};
+
 const resolveFromSources = async (
 	fallbackUrl: string,
 	fetchImpl: typeof fetch,
@@ -81,11 +107,33 @@ const resolveFromSources = async (
 			}
 		}),
 	);
-	const newestEndpoint = endpoints
-		.filter((endpoint): endpoint is ApiEndpoint => endpoint !== null)
-		.sort((left, right) => right.updatedAt - left.updatedAt)[0];
 
-	return newestEndpoint?.url ?? normalizeApiUrl(fallbackUrl);
+	const uniqueByUrl = new Map<string, ApiEndpoint>();
+	for (const endpoint of endpoints) {
+		if (!endpoint) {
+			continue;
+		}
+		const previous = uniqueByUrl.get(endpoint.url);
+		if (!previous || endpoint.updatedAt > previous.updatedAt) {
+			uniqueByUrl.set(endpoint.url, endpoint);
+		}
+	}
+
+	const ranked = [...uniqueByUrl.values()].sort(
+		(left, right) => right.updatedAt - left.updatedAt,
+	);
+	const fallback = normalizeApiUrl(fallbackUrl);
+	if (fallback && !uniqueByUrl.has(fallback)) {
+		ranked.push({ url: fallback, updatedAt: 0 });
+	}
+
+	for (const endpoint of ranked) {
+		if (await probeApiHealth(endpoint.url, fetchImpl)) {
+			return endpoint.url;
+		}
+	}
+
+	return ranked[0]?.url ?? fallback;
 };
 
 export const getCachedApiUrl = (fallbackUrl: string): string =>

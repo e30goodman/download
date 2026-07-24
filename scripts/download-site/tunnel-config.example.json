@@ -1,0 +1,5 @@
+{
+	"mode": "named",
+	"token": "PASTE_CLOUDFLARE_TUNNEL_TOKEN",
+	"publicUrl": "https://api.your-domain.com"
+}

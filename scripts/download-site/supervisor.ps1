@@ -1,9 +1,13 @@
 $ErrorActionPreference = "Continue"
 
+# Bump when behavior changes; deploy-ops.ps1 restarts the process so this loads.
+$supervisorVersion = "2026.07.24-stable-ingress"
+
 $dataRoot = "C:\Users\user\AppData\Local\DownloadSite"
 $apiRunner = "$dataRoot\run-api.ps1"
 $tunnelRunner = "$dataRoot\run-tunnel.ps1"
 $tunnelLog = "$dataRoot\tunnel.log"
+$tunnelConfigPath = "$dataRoot\tunnel-config.json"
 $currentUrlFile = "$dataRoot\current-url.txt"
 $supervisorLog = "$dataRoot\supervisor.log"
 $lockFile = "$dataRoot\supervisor.lock"
@@ -21,18 +25,49 @@ $apiHealthTimeoutSec = 5
 $apiSlowMs = 2500
 $apiWarmupSeconds = 45
 $sleepGapSeconds = 120
+$postSleepTunnelGraceSeconds = 180
 
 $script:tunnelFailureCount = 0
 $script:apiFailureCount = 0
 $script:apiSuccessStreak = 0
 $script:apiFailureWindowStart = $null
 $script:skipTunnelChecksUntil = [datetime]::MinValue
+$script:postSleepGraceUntil = [datetime]::MinValue
 $script:lastLoopAt = Get-Date
+$script:tunnelMode = "quick"
+$script:namedPublicUrl = $null
 
 function Write-SupervisorLog {
 	param([string]$Message)
 	$line = "$(Get-Date -Format s) $Message"
 	Add-Content -Path $supervisorLog -Value $line -Encoding UTF8
+}
+
+function Read-TunnelConfig {
+	$script:tunnelMode = "quick"
+	$script:namedPublicUrl = $null
+	if (-not (Test-Path $tunnelConfigPath)) {
+		return
+	}
+
+	try {
+		$config = Get-Content -Path $tunnelConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+		$mode = [string]$config.mode
+		if ($mode -eq "named") {
+			$token = [string]$config.token
+			$publicUrl = [string]$config.publicUrl
+			if ($token.Length -gt 20 -and $publicUrl.Length -gt 0) {
+				$script:tunnelMode = "named"
+				$script:namedPublicUrl = $publicUrl.Trim().TrimEnd('/').ToLowerInvariant()
+			}
+			else {
+				Write-SupervisorLog "tunnel-config.json mode=named but token/publicUrl incomplete; falling back to quick."
+			}
+		}
+	}
+	catch {
+		Write-SupervisorLog "Failed to read tunnel-config.json: $($_.Exception.Message)"
+	}
 }
 
 function Test-SingleInstance {
@@ -183,11 +218,19 @@ function Ensure-Api {
 
 function Get-TunnelProcess {
 	return Get-CimInstance Win32_Process -Filter "Name = 'cloudflared.exe'" |
-		Where-Object { $_.CommandLine -like "*127.0.0.1:$apiPort*" } |
+		Where-Object {
+			$_.CommandLine -like "*127.0.0.1:$apiPort*" -or
+			$_.CommandLine -like "*tunnel run*" -or
+			$_.CommandLine -like "*--token*"
+		} |
 		Select-Object -First 1
 }
 
 function Read-TunnelUrl {
+	if ($script:tunnelMode -eq "named" -and $script:namedPublicUrl) {
+		return $script:namedPublicUrl
+	}
+
 	if (-not (Test-Path $tunnelLog)) {
 		return $null
 	}
@@ -199,6 +242,10 @@ function Read-TunnelUrl {
 		[System.Text.RegularExpressions.RegexOptions]::IgnoreCase
 	)
 	if ($matches.Count -eq 0) {
+		# Named mode may log the publicUrl line without trycloudflare.
+		if ($content -match 'https://[^\s"]+') {
+			return $Matches[0].TrimEnd('/').ToLowerInvariant()
+		}
 		return $null
 	}
 	return $matches[$matches.Count - 1].Value.ToLowerInvariant()
@@ -250,7 +297,7 @@ function Stop-Tunnel {
 
 function Restart-Tunnel {
 	Stop-Tunnel
-	Write-SupervisorLog "Starting Cloudflare Tunnel."
+	Write-SupervisorLog "Starting Cloudflare Tunnel (mode=$script:tunnelMode)."
 	Start-HiddenPowerShell -ScriptPath $tunnelRunner
 
 	for ($attempt = 0; $attempt -lt 45; $attempt++) {
@@ -282,6 +329,25 @@ function Ensure-Tunnel {
 	$process = Get-TunnelProcess
 	$tunnelUrl = Read-TunnelUrl
 	$publishedUrl = Read-PublishedUrl
+	$inPostSleepGrace = (Get-Date) -lt $script:postSleepGraceUntil
+
+	# After sleep/wake, network/DNS often flakes while cloudflared is still fine.
+	# Rotating a quick tunnel here is what creates dead *.trycloudflare.com hosts.
+	if ($inPostSleepGrace -and $process) {
+		$graceUrl = $tunnelUrl
+		if (-not $graceUrl) {
+			$graceUrl = $publishedUrl
+		}
+		if ($graceUrl -and (Test-RemoteHealth -Url $graceUrl)) {
+			$script:tunnelFailureCount = 0
+			$script:postSleepGraceUntil = [datetime]::MinValue
+			Write-SupervisorLog "Post-sleep tunnel recovered without restart: $graceUrl"
+			return $graceUrl
+		}
+
+		Write-SupervisorLog "Post-sleep grace: keeping existing tunnel process (pid=$($process.ProcessId)); remote health still flaky."
+		return $graceUrl
+	}
 
 	$liveHealthy = $false
 	if ($process -and $tunnelUrl) {
@@ -320,6 +386,12 @@ function Ensure-Tunnel {
 		Write-SupervisorLog "Live tunnel health check failed ($script:tunnelFailureCount/$tunnelFailureThreshold) for $tunnelUrl (process still running)."
 		if ($script:tunnelFailureCount -lt $tunnelFailureThreshold) {
 			return $null
+		}
+
+		# Quick tunnels: prefer keeping the process longer — one more local-only wait.
+		if ($script:tunnelMode -ne "named" -and $script:tunnelFailureCount -lt ($tunnelFailureThreshold + 2)) {
+			Write-SupervisorLog "Quick tunnel mode: delaying rotate to avoid hostname churn ($script:tunnelFailureCount)."
+			return $tunnelUrl
 		}
 	}
 	elseif (-not $process) {
@@ -427,7 +499,8 @@ if (-not (Test-SingleInstance)) {
 	exit 0
 }
 
-Write-SupervisorLog "Supervisor started (pid=$PID)."
+Read-TunnelConfig
+Write-SupervisorLog "Supervisor started (pid=$PID, version=$supervisorVersion, tunnelMode=$script:tunnelMode)."
 try {
 	while ($true) {
 		$now = Get-Date
@@ -436,8 +509,9 @@ try {
 		$resumedFromSleep = $gapSeconds -gt $sleepGapSeconds
 
 		if ($resumedFromSleep) {
-			Write-SupervisorLog "Detected resume/sleep gap of $([int]$gapSeconds)s; forcing health recheck."
+			Write-SupervisorLog "Detected resume/sleep gap of $([int]$gapSeconds)s; forcing health recheck with tunnel grace ${postSleepTunnelGraceSeconds}s."
 			$script:tunnelFailureCount = 0
+			$script:postSleepGraceUntil = $now.AddSeconds($postSleepTunnelGraceSeconds)
 			$apiOk = Ensure-Api -ForceRestartIfSlow
 			if ($apiOk) {
 				$tunnelUrl = Ensure-Tunnel
