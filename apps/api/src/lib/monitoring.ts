@@ -225,6 +225,101 @@ const ensureVisitorCapacity = (): void => {
   }
 }
 
+const findSessionVisitorByIp = (ip: string): VisitorActivity | undefined => {
+  for (const visitor of visitors.values()) {
+    if (visitor.sessionId && visitor.ip === ip) {
+      return visitor
+    }
+  }
+  return undefined
+}
+
+const mergeVisitorStats = (
+  target: VisitorActivity,
+  source: VisitorActivity
+): void => {
+  target.requests += source.requests
+  target.currentRequests += source.currentRequests
+  target.firstSeen = Math.min(target.firstSeen, source.firstSeen)
+  target.lastSeen = Math.max(target.lastSeen, source.lastSeen)
+  target.country = target.country ?? source.country
+  target.userAgent = target.userAgent ?? source.userAgent
+}
+
+const resolveTrackedVisitor = (
+  visitorIp: string,
+  sessionId: string | null,
+  clientKind: string | null,
+  now: number,
+  country: string | null,
+  userAgent: string | null
+): { visitor: VisitorActivity; visitorKey: string } => {
+  if (sessionId) {
+    const visitorKey = `session:${sessionId}`
+    let visitor = visitors.get(visitorKey)
+    const ipOnlyKey = `ip:${visitorIp}`
+    const ipOnly = visitors.get(ipOnlyKey)
+
+    if (!visitor) {
+      if (ipOnly) {
+        visitors.delete(ipOnlyKey)
+        visitor = {
+          ...ipOnly,
+          key: visitorKey,
+          sessionId
+        }
+        visitors.set(visitorKey, visitor)
+      } else {
+        ensureVisitorCapacity()
+        visitor = {
+          country,
+          currentRequests: 0,
+          firstSeen: now,
+          ip: visitorIp,
+          key: visitorKey,
+          kind: resolveVisitorKind(clientKind),
+          lastSeen: now,
+          requests: 0,
+          sessionId,
+          userAgent
+        }
+        visitors.set(visitorKey, visitor)
+      }
+    } else if (ipOnly && ipOnly.key !== visitor.key) {
+      mergeVisitorStats(visitor, ipOnly)
+      visitors.delete(ipOnlyKey)
+    }
+
+    return { visitor, visitorKey }
+  }
+
+  const existingSessionVisitor = findSessionVisitorByIp(visitorIp)
+  if (existingSessionVisitor) {
+    return { visitor: existingSessionVisitor, visitorKey: existingSessionVisitor.key }
+  }
+
+  const visitorKey = `ip:${visitorIp}`
+  let visitor = visitors.get(visitorKey)
+  if (!visitor) {
+    ensureVisitorCapacity()
+    visitor = {
+      country,
+      currentRequests: 0,
+      firstSeen: now,
+      ip: visitorIp,
+      key: visitorKey,
+      kind: resolveVisitorKind(clientKind),
+      lastSeen: now,
+      requests: 0,
+      sessionId: null,
+      userAgent
+    }
+    visitors.set(visitorKey, visitor)
+  }
+
+  return { visitor, visitorKey }
+}
+
 export const recordRequestStarted = (request: FastifyRequest): void => {
   const pathOnly = getRequestPath(request.raw.url)
   const clientKind = getClientKind(request)
@@ -237,26 +332,15 @@ export const recordRequestStarted = (request: FastifyRequest): void => {
   }
 
   const now = Date.now()
-  const visitorKey = sessionId ? `session:${sessionId}` : `ip:${ip}`
   const visitorIp = cloudflareIp ?? ip
-  let visitor = visitors.get(visitorKey)
-
-  if (!visitor) {
-    ensureVisitorCapacity()
-    visitor = {
-      country: truncate(firstHeaderValue(request.headers['cf-ipcountry']), 8),
-      currentRequests: 0,
-      firstSeen: now,
-      ip: visitorIp,
-      key: visitorKey,
-      kind: resolveVisitorKind(clientKind),
-      lastSeen: now,
-      requests: 0,
-      sessionId,
-      userAgent: truncate(firstHeaderValue(request.headers['user-agent']), 180)
-    }
-    visitors.set(visitorKey, visitor)
-  }
+  const { visitor, visitorKey } = resolveTrackedVisitor(
+    visitorIp,
+    sessionId,
+    clientKind,
+    now,
+    truncate(firstHeaderValue(request.headers['cf-ipcountry']), 8),
+    truncate(firstHeaderValue(request.headers['user-agent']), 180)
+  )
 
   visitor.currentRequests += 1
   visitor.lastSeen = now
@@ -266,6 +350,9 @@ export const recordRequestStarted = (request: FastifyRequest): void => {
     truncate(firstHeaderValue(request.headers['cf-ipcountry']), 8) ?? visitor.country
   visitor.userAgent =
     truncate(firstHeaderValue(request.headers['user-agent']), 180) ?? visitor.userAgent
+  if (sessionId) {
+    visitor.sessionId = sessionId
+  }
 
   activeRequests += 1
   lastRequestAt = now
@@ -379,22 +466,70 @@ const getQueueSnapshot = () => {
 export const getMonitoringSnapshot = () => {
   const now = Date.now()
   const memory = process.memoryUsage()
-  const visitorList = [...visitors.values()]
+  const collapsedByIp = new Map<
+    string,
+    {
+      active: boolean
+      country: string | null
+      currentRequests: number
+      firstSeen: number
+      ip: string
+      isNew: boolean
+      key: string
+      lastSeen: number
+      requests: number
+      session: string | null
+      userAgent: string | null
+    }
+  >()
+
+  const ranked = [...visitors.values()]
     .filter((visitor) => visitor.kind !== 'monitor')
-    .sort((a, b) => b.lastSeen - a.lastSeen)
-    .map((visitor) => ({
-      active: visitor.currentRequests > 0 || visitor.lastSeen >= now - ACTIVE_VISITOR_WINDOW_MS,
-      country: visitor.country,
-      currentRequests: visitor.currentRequests,
-      firstSeen: visitor.firstSeen,
-      ip: visitor.ip,
-      isNew: isNewVisitor(visitor.firstSeen, now),
-      key: visitor.key,
-      lastSeen: visitor.lastSeen,
-      requests: visitor.requests,
-      session: visitor.sessionId ? visitor.sessionId.slice(0, 8) : null,
-      userAgent: visitor.userAgent
-    }))
+    .sort((a, b) => {
+      // Prefer rows with a session, then most recently seen.
+      if (Boolean(a.sessionId) !== Boolean(b.sessionId)) {
+        return a.sessionId ? -1 : 1
+      }
+      return b.lastSeen - a.lastSeen
+    })
+
+  for (const visitor of ranked) {
+    const existing = collapsedByIp.get(visitor.ip)
+    if (!existing) {
+      collapsedByIp.set(visitor.ip, {
+        active: visitor.currentRequests > 0 || visitor.lastSeen >= now - ACTIVE_VISITOR_WINDOW_MS,
+        country: visitor.country,
+        currentRequests: visitor.currentRequests,
+        firstSeen: visitor.firstSeen,
+        ip: visitor.ip,
+        isNew: isNewVisitor(visitor.firstSeen, now),
+        key: visitor.key,
+        lastSeen: visitor.lastSeen,
+        requests: visitor.requests,
+        session: visitor.sessionId ? visitor.sessionId.slice(0, 8) : null,
+        userAgent: visitor.userAgent
+      })
+      continue
+    }
+
+    existing.requests += visitor.requests
+    existing.currentRequests += visitor.currentRequests
+    existing.firstSeen = Math.min(existing.firstSeen, visitor.firstSeen)
+    existing.lastSeen = Math.max(existing.lastSeen, visitor.lastSeen)
+    existing.active =
+      existing.active ||
+      visitor.currentRequests > 0 ||
+      visitor.lastSeen >= now - ACTIVE_VISITOR_WINDOW_MS
+    existing.isNew = existing.isNew || isNewVisitor(visitor.firstSeen, now)
+    if (!existing.session && visitor.sessionId) {
+      existing.session = visitor.sessionId.slice(0, 8)
+      existing.key = visitor.key
+    }
+    existing.country = existing.country ?? visitor.country
+    existing.userAgent = existing.userAgent ?? visitor.userAgent
+  }
+
+  const visitorList = [...collapsedByIp.values()].sort((a, b) => b.lastSeen - a.lastSeen)
 
   return {
     generatedAt: now,
