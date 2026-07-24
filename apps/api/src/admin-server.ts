@@ -78,7 +78,7 @@ const buildDashboardHtml = (nonce: string): string => `<!doctype html>
 <body>
   <main>
     <header>
-      <div><h1>Мониторинг сервера</h1><p>Локальная панель VidBee · доступна только на этом компьютере</p></div>
+      <div><h1>Мониторинг сервера</h1></div>
       <div class="header-actions">
         <button type="button" class="action-btn warn" id="restart-server">Перезапустить сервер</button>
         <div class="status"><span class="dot" id="status-dot"></span><span id="status-text">Подключение…</span></div>

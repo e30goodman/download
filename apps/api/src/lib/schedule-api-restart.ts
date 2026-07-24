@@ -23,17 +23,32 @@ export const scheduleApiRestart = async (): Promise<{ scriptPath: string }> => {
     'powershell.exe'
   )
 
-  // Detached: response can return before this process is stopped.
-  // restart-api.ps1 only kills LISTENING ports, so cloudflared stays up.
+  // `cmd /c start` hands the script to the shell, so it keeps running after this
+  // process is stopped. A plain detached spawn dies together with the parent here.
+  // restart-api.ps1 only stops LISTENING ports, so cloudflared keeps its URL.
   const child = spawn(
-    powershell,
-    ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath],
+    'cmd.exe',
+    [
+      '/c',
+      'start',
+      '',
+      '/min',
+      powershell,
+      '-NoProfile',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-File',
+      scriptPath
+    ],
     {
       detached: true,
       stdio: 'ignore',
       windowsHide: true
     }
   )
+  child.on('error', (error) => {
+    console.error('Failed to launch restart script:', error)
+  })
   child.unref()
 
   return { scriptPath }
