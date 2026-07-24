@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Continue"
 
 # Bump when behavior changes; deploy-ops.ps1 restarts the process so this loads.
-$supervisorVersion = "2026.07.24-stable-ingress"
+$supervisorVersion = "2026.07.24-zombie-tunnel-fix"
 
 $dataRoot = "C:\Users\user\AppData\Local\DownloadSite"
 $apiRunner = "$dataRoot\run-api.ps1"
@@ -392,13 +392,16 @@ function Ensure-Tunnel {
 		}
 	}
 
-	# Process alive but remote health flaky while local API is up — tolerate briefly.
+	# Process alive but remote health dead while local API is up.
+	# After sleep we wait (grace). After that, a living-but-zombie quick tunnel
+	# must be restarted — otherwise the site stays broken forever on a dead hostname.
 	if ($process -and $tunnelUrl -and (Test-ApiHealth).Ok) {
 		$script:tunnelFailureCount += 1
 		Write-SupervisorLog "Live tunnel health check failed ($script:tunnelFailureCount/$tunnelFailureThreshold) for $tunnelUrl (process still running)."
-		# Never restart a living quick-tunnel process: restart = new public URL = site down.
-		# Keep waiting; only Restart-Tunnel when the process is actually missing.
-		return $tunnelUrl
+		if ($script:tunnelFailureCount -lt $tunnelFailureThreshold) {
+			return $tunnelUrl
+		}
+		Write-SupervisorLog "Tunnel process is alive but public URL is dead; restarting tunnel to restore the site."
 	}
 	elseif (-not $process) {
 		$script:tunnelFailureCount += 1
@@ -412,10 +415,6 @@ function Ensure-Tunnel {
 		Write-SupervisorLog "Tunnel unhealthy ($script:tunnelFailureCount/$tunnelFailureThreshold)."
 		if ($script:tunnelFailureCount -lt $tunnelFailureThreshold) {
 			return $null
-		}
-		# Process exists — do not rotate URL.
-		if ($process) {
-			return $tunnelUrl
 		}
 	}
 
