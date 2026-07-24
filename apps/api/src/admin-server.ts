@@ -1,6 +1,8 @@
 import { randomBytes } from 'node:crypto'
+import { access } from 'node:fs/promises'
 import Fastify from 'fastify'
 import { clearAllVisitors, dismissVisitor, getMonitoringSnapshot } from './lib/monitoring'
+import { getRestartScriptPath, scheduleApiRestart } from './lib/schedule-api-restart'
 
 const isAllowedHost = (host: string | undefined): boolean => {
   const normalizedHost = host?.trim().toLowerCase() ?? ''
@@ -45,7 +47,9 @@ const buildDashboardHtml = (nonce: string): string => `<!doctype html>
     .filter-btn,.action-btn{border:1px solid #263148;border-radius:999px;background:#101622;color:#b9c4d8;font-size:11px;padding:6px 10px;cursor:pointer}
     .filter-btn.active{border-color:#3f6f9d;background:#152338;color:#eef4ff}
     .action-btn.danger{border-color:#5a2630;color:#ff9dac}
+    .action-btn.warn{border-color:#5a4a20;color:#ffd27a;font-size:12px;padding:8px 12px}
     .action-btn:disabled{opacity:.45;cursor:not-allowed}
+    .header-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end}
     .queue{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
     .queue div{padding:12px;border-radius:13px;background:#0a0f19;border:1px solid #1b2536}
     .queue strong{display:block;font-size:20px}
@@ -75,7 +79,10 @@ const buildDashboardHtml = (nonce: string): string => `<!doctype html>
   <main>
     <header>
       <div><h1>Мониторинг сервера</h1><p>Локальная панель VidBee · доступна только на этом компьютере</p></div>
-      <div class="status"><span class="dot" id="status-dot"></span><span id="status-text">Подключение…</span></div>
+      <div class="header-actions">
+        <button type="button" class="action-btn warn" id="restart-server">Перезапустить сервер</button>
+        <div class="status"><span class="dot" id="status-dot"></span><span id="status-text">Подключение…</span></div>
+      </div>
     </header>
     <div class="error-box" id="error-box"></div>
     <section class="grid" aria-label="Основные показатели">
@@ -318,6 +325,30 @@ const buildDashboardHtml = (nonce: string): string => `<!doctype html>
         box.style.display = "block";
       });
     });
+    byId("restart-server").addEventListener("click", () => {
+      const button = byId("restart-server");
+      if (button.disabled) return;
+      const confirmed = window.confirm("Перезапустить API-сервер?\\nТуннель не трогаем. Панель на пару секунд пропадёт.");
+      if (!confirmed) return;
+      button.disabled = true;
+      button.textContent = "Перезапуск…";
+      fetch("/api/restart", { method: "POST" })
+        .then(async (response) => {
+          if (!response.ok) {
+            const body = await response.json().catch(() => ({}));
+            throw new Error(body.message || "HTTP " + response.status);
+          }
+          setText("status-text", "Сервер перезапускается…");
+          byId("status-dot").className = "dot error";
+        })
+        .catch((error) => {
+          button.disabled = false;
+          button.textContent = "Перезапустить сервер";
+          const box = byId("error-box");
+          box.textContent = "Не удалось перезапустить: " + (error instanceof Error ? error.message : "неизвестная ошибка");
+          box.style.display = "block";
+        });
+    });
     void refresh();
     window.setInterval(refresh, 2000);
   </script>
@@ -343,6 +374,30 @@ export const createAdminServer = () => {
 
   admin.get('/health', async () => ({ ok: true }))
   admin.get('/api/snapshot', async () => getMonitoringSnapshot())
+  admin.post('/api/restart', async (_request, reply) => {
+    try {
+      const scriptPath = getRestartScriptPath()
+      await access(scriptPath)
+      // Delay so the HTTP response can leave before ports are stopped.
+      setTimeout(() => {
+        void scheduleApiRestart().catch((error) => {
+          console.error('Failed to schedule API restart:', error)
+        })
+      }, 400)
+      return {
+        ok: true,
+        message: 'API restart scheduled. Tunnel is left running.',
+        scriptPath
+      }
+    } catch (error) {
+      return reply.code(500).send({
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Failed to schedule restart.'
+      })
+    }
+  })
   admin.delete<{ Querystring: { key?: string } }>('/api/visitors', async (request, reply) => {
     const key = request.query.key?.trim()
     if (!key) {
