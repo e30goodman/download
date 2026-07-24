@@ -67,12 +67,8 @@ export const createApiServer = async () => {
     methods: ['GET', 'POST', 'OPTIONS']
   })
   if (isPublicSiteEnabled) {
-    await fastify.register(rateLimit, {
-      global: true,
-      max: 120,
-      timeWindow: '1 minute',
-      keyGenerator: (request) => request.ip
-    })
+    // Owner's open tab polls every 2s — a global rate limit just bans you from yourself.
+    // Keep the plugin registered off; re-enable later only on expensive mutate routes if needed.
   }
 
   const rpcHandler = new RPCHandler(rpcRouter)

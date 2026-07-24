@@ -8,9 +8,14 @@ $adminPort = 3111
 
 function Stop-PortListener {
 	param([int]$Port)
-	$connections = netstat -ano | Select-String ":$Port\s"
+	# Only LISTENING — never kill cloudflared's outbound connections to this port.
+	$connections = netstat -ano | Select-String "LISTENING"
 	foreach ($line in $connections) {
-		$parts = ($line -replace '\s+', ' ').Trim().Split(' ')
+		$text = ($line -replace '\s+', ' ').Trim()
+		if ($text -notmatch ":$Port\s") {
+			continue
+		}
+		$parts = $text.Split(' ')
 		$processId = [int]$parts[-1]
 		if ($processId -gt 0) {
 			Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue

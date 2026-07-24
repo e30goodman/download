@@ -216,12 +216,18 @@ export const DownloadPage = () => {
 			);
 			const rawMessage =
 				error instanceof Error ? error.message : t("errors.networkError");
-			const message =
-				/failed to fetch|networkerror|load failed|fetch failed/i.test(
-					rawMessage,
-				)
+			const isRateLimited = /too many requests|rate limit/i.test(rawMessage);
+			const message = isRateLimited
+				? t("errors.apiUnreachable")
+				: /failed to fetch|networkerror|load failed|fetch failed/i.test(
+							rawMessage,
+					  )
 					? t("errors.apiUnreachable")
 					: rawMessage;
+			// Rate limits are transient; keep polling without sticking the red banner.
+			if (isRateLimited) {
+				return;
+			}
 			if (apiFailureCountRef.current >= API_FAILURE_THRESHOLD) {
 				setIsApiReachable(false);
 				setApiConnectionMessage(message);

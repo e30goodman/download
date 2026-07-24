@@ -88,9 +88,16 @@ function Test-SingleInstance {
 function Stop-PortListener {
 	param([int]$Port)
 
-	$connections = netstat -ano | Select-String ":$Port\s"
+	# Only kill the process that is LISTENING on the port.
+	# Matching every netstat row for ":3110" also kills cloudflared (it has
+	# outbound connections to the API) — that rotates the public URL and breaks the site.
+	$connections = netstat -ano | Select-String "LISTENING"
 	foreach ($line in $connections) {
-		$parts = ($line -replace '\s+', ' ').Trim().Split(' ')
+		$text = ($line -replace '\s+', ' ').Trim()
+		if ($text -notmatch ":$Port\s") {
+			continue
+		}
+		$parts = $text.Split(' ')
 		$processId = [int]$parts[-1]
 		if ($processId -gt 0) {
 			Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
@@ -236,19 +243,24 @@ function Read-TunnelUrl {
 	}
 
 	$content = Get-Content -Path $tunnelLog -Raw -ErrorAction SilentlyContinue
+	# Strict match only — tunnel.log also contains cloudflare.com marketing links.
 	$matches = [regex]::Matches(
 		$content,
 		"https://[a-z0-9-]+\.trycloudflare\.com",
 		[System.Text.RegularExpressions.RegexOptions]::IgnoreCase
 	)
 	if ($matches.Count -eq 0) {
-		# Named mode may log the publicUrl line without trycloudflare.
-		if ($content -match 'https://[^\s"]+') {
-			return $Matches[0].TrimEnd('/').ToLowerInvariant()
-		}
 		return $null
 	}
 	return $matches[$matches.Count - 1].Value.ToLowerInvariant()
+}
+
+function Test-IsPublicTunnelUrl {
+	param([string]$Url)
+	if (-not $Url) {
+		return $false
+	}
+	return [bool]($Url -match '^https://[a-z0-9-]+\.trycloudflare\.com/?$')
 }
 
 function Read-PublishedUrl {
@@ -384,15 +396,9 @@ function Ensure-Tunnel {
 	if ($process -and $tunnelUrl -and (Test-ApiHealth).Ok) {
 		$script:tunnelFailureCount += 1
 		Write-SupervisorLog "Live tunnel health check failed ($script:tunnelFailureCount/$tunnelFailureThreshold) for $tunnelUrl (process still running)."
-		if ($script:tunnelFailureCount -lt $tunnelFailureThreshold) {
-			return $null
-		}
-
-		# Quick tunnels: prefer keeping the process longer — one more local-only wait.
-		if ($script:tunnelMode -ne "named" -and $script:tunnelFailureCount -lt ($tunnelFailureThreshold + 2)) {
-			Write-SupervisorLog "Quick tunnel mode: delaying rotate to avoid hostname churn ($script:tunnelFailureCount)."
-			return $tunnelUrl
-		}
+		# Never restart a living quick-tunnel process: restart = new public URL = site down.
+		# Keep waiting; only Restart-Tunnel when the process is actually missing.
+		return $tunnelUrl
 	}
 	elseif (-not $process) {
 		$script:tunnelFailureCount += 1
@@ -406,6 +412,10 @@ function Ensure-Tunnel {
 		Write-SupervisorLog "Tunnel unhealthy ($script:tunnelFailureCount/$tunnelFailureThreshold)."
 		if ($script:tunnelFailureCount -lt $tunnelFailureThreshold) {
 			return $null
+		}
+		# Process exists — do not rotate URL.
+		if ($process) {
+			return $tunnelUrl
 		}
 	}
 
@@ -464,27 +474,33 @@ function Publish-ApiEndpointFile {
 function Publish-TunnelUrl {
 	param([string]$Url)
 
-	$currentUrl = Read-PublishedUrl
-	if ($currentUrl -eq $Url) {
+	if (-not (Test-IsPublicTunnelUrl -Url $Url)) {
+		Write-SupervisorLog "Refusing to publish invalid tunnel URL: $Url"
 		return
 	}
 
-	Set-Content -Path $currentUrlFile -Value $Url -Encoding UTF8
+	$normalized = $Url.Trim().TrimEnd('/').ToLowerInvariant()
+	$currentUrl = Read-PublishedUrl
+	if ($currentUrl -eq $normalized) {
+		return
+	}
+
+	Set-Content -Path $currentUrlFile -Value $normalized -Encoding UTF8
 
 	if (-not (Test-Path $gh)) {
 		Write-SupervisorLog "GitHub CLI not found; saved tunnel URL locally only."
 		return
 	}
 
-	Write-SupervisorLog "Publishing new tunnel URL: $Url"
-	& $gh variable set VIDBEE_API_URL --body $Url --repo $repository *>> $supervisorLog
+	Write-SupervisorLog "Publishing new tunnel URL: $normalized"
+	& $gh variable set VIDBEE_API_URL --body $normalized --repo $repository *>> $supervisorLog
 	if ($LASTEXITCODE -ne 0) {
 		Write-SupervisorLog "Failed to update the GitHub variable."
 		return
 	}
 
 	# Fast path: clients read raw.githubusercontent.com within seconds.
-	[void](Publish-ApiEndpointFile -Url $Url)
+	[void](Publish-ApiEndpointFile -Url $normalized)
 
 	& $gh workflow run download-pages.yml --repo $repository *>> $supervisorLog
 	if ($LASTEXITCODE -ne 0) {
@@ -492,7 +508,7 @@ function Publish-TunnelUrl {
 		return
 	}
 
-	Write-SupervisorLog "Pages deployment started for $Url."
+	Write-SupervisorLog "Pages deployment started for $normalized."
 }
 
 if (-not (Test-SingleInstance)) {
