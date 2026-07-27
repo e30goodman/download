@@ -1,7 +1,8 @@
 /**
  * Convert subtitle files (SRT / WebVTT) into plain transcript text.
- * Auto-generated YouTube captions often repeat the same cue; consecutive
- * duplicates are collapsed.
+ * Auto-generated YouTube captions use a rolling karaoke window: each cue
+ * repeats the tail of the previous one. Consecutive duplicates, prefix
+ * extensions, and word-level overlaps are collapsed.
  */
 
 const TIMESTAMP_LINE =
@@ -10,6 +11,8 @@ const WEBVTT_HEADER = /^WEBVTT\b/i
 const CUE_INDEX = /^\d+$/
 const TAG_RE = /<[^>]+>/g
 const NOTE_OR_STYLE = /^(NOTE|STYLE|REGION)\b/i
+/** Ignore 1-word overlaps — too easy to false-positive on common words. */
+const MIN_OVERLAP_WORDS = 2
 
 const normalizeCueText = (raw: string): string =>
   raw
@@ -20,6 +23,20 @@ const normalizeCueText = (raw: string): string =>
     .replace(/&gt;/gi, '>')
     .replace(/\s+/g, ' ')
     .trim()
+
+/** Longest word-suffix of `previous` that equals a word-prefix of `text`. */
+const wordOverlapCount = (previous: string, text: string): number => {
+  const previousWords = previous.split(' ')
+  const textWords = text.split(' ')
+  const max = Math.min(previousWords.length, textWords.length)
+  let overlap = 0
+  for (let count = 1; count <= max; count++) {
+    if (previousWords.slice(-count).join(' ') === textWords.slice(0, count).join(' ')) {
+      overlap = count
+    }
+  }
+  return overlap
+}
 
 export const subtitleFileToPlainText = (content: string): string => {
   const lines = content.replace(/^\uFEFF/, '').split(/\r?\n/)
@@ -45,6 +62,21 @@ export const subtitleFileToPlainText = (content: string): string => {
     }
     if (previous && previous.startsWith(text)) {
       return
+    }
+    // Scroll/commit frame: entire cue is already the visible tail of previous.
+    if (previous && previous.endsWith(text)) {
+      return
+    }
+    if (previous) {
+      const overlap = wordOverlapCount(previous, text)
+      const textWords = text.split(' ')
+      if (overlap === textWords.length) {
+        return
+      }
+      if (overlap >= MIN_OVERLAP_WORDS) {
+        cues.push(textWords.slice(overlap).join(' '))
+        return
+      }
     }
     cues.push(text)
   }
