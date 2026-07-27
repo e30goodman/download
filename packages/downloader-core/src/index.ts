@@ -67,5 +67,11 @@ export {
   resolveVideoFormatSelector,
   sanitizeFilenameTemplate
 } from './yt-dlp-args'
+export {
+  appendYtDlpPluginDirs,
+  isInstagramUrl,
+  probeInstagramHasAudio,
+  resolveYtDlpPluginDirs
+} from './instagram'
 export type { YtDlpExecutorOptions, YtDlpTaskOptions } from './yt-dlp-executor'
 export { YtDlpExecutor } from './yt-dlp-executor'

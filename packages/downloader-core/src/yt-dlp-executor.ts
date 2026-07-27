@@ -28,6 +28,7 @@ import { virtualError } from '@vidbee/task-queue'
 
 import type { DownloadRuntimeSettings } from './types'
 import type { OneClickContainerOption } from './format-preferences'
+import { isInstagramUrl, probeInstagramHasAudio, INSTAGRAM_NO_VIDEO_MESSAGE } from './instagram'
 import { buildDownloadArgs, formatYtDlpCommand } from './yt-dlp-args'
 
 const require = createRequire(import.meta.url)
@@ -460,11 +461,32 @@ export class YtDlpExecutor implements Executor {
       return [...input.rawArgs]
     }
     const opts = (input.options ?? {}) as YtDlpTaskOptions
-    const type = opts.type ?? (input.kind === 'audio' ? 'audio' : 'video')
+    let type = opts.type ?? (input.kind === 'audio' ? 'audio' : 'video')
+    let format = opts.format
+    let audioFormat = opts.audioFormat
+    let containerFormat = opts.containerFormat
     const settings: DownloadRuntimeSettings = {
       ...this.opts.defaultRuntimeSettings,
       ...(opts.settings ?? {})
     }
+
+    // Instagram photo/ad posts have no audio stream. Probe with the still-image
+    // plugin and fall back to downloading the image instead of failing extract-audio.
+    if (type === 'audio' && isInstagramUrl(input.url)) {
+      try {
+        const ytDlpPath = this.opts.resolveYtDlpPath()
+        const hasAudio = probeInstagramHasAudio(ytDlpPath, input.url, settings)
+        if (hasAudio === false) {
+          type = 'video'
+          format = 'best'
+          audioFormat = undefined
+          containerFormat = 'original'
+        }
+      } catch {
+        // Keep the original audio request; classifyYtDlpExit maps photo errors.
+      }
+    }
+
     const downloadPath =
       opts.customDownloadPath?.trim() ||
       settings.downloadPath?.trim() ||
@@ -475,14 +497,14 @@ export class YtDlpExecutor implements Executor {
       {
         url: input.url,
         type,
-        format: opts.format,
-        audioFormat: opts.audioFormat,
+        format,
+        audioFormat,
         audioFormatIds: opts.audioFormatIds ? [...opts.audioFormatIds] : undefined,
         startTime: opts.startTime,
         endTime: opts.endTime,
         customDownloadPath: opts.customDownloadPath,
         customFilenameTemplate: opts.customFilenameTemplate,
-        containerFormat: opts.containerFormat
+        containerFormat
       },
       this.opts.defaultDownloadDir,
       merged,
@@ -633,7 +655,9 @@ function classifyYtDlpExit(exitCode: number | null, stderr: string): ClassifiedE
     return virtualError('auth-required', stderr || `yt-dlp exited ${exitCode}`)
   if (/(not available in your country|geo.?restricted|geographic)/.test(txt))
     return virtualError('geo-blocked', stderr || `yt-dlp exited ${exitCode}`)
-  if (/(video unavailable|not found|404)/.test(txt))
+  if (/there is no video in this post/.test(txt))
+    return virtualError('not-found', INSTAGRAM_NO_VIDEO_MESSAGE)
+  if (/(video unavailable|not found|404|requested format is not available)/.test(txt))
     return virtualError('not-found', stderr || `yt-dlp exited ${exitCode}`)
   if (/(no space left|disk full|enospc)/.test(txt))
     return virtualError('disk-full', stderr || `yt-dlp exited ${exitCode}`)

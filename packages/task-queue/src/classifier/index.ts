@@ -60,7 +60,7 @@ export const CLASSIFIER_RULES: readonly Rule[] = [
   {
     category: 'not-found',
     regex:
-      /HTTP Error 404|Video unavailable|This video has been removed|Requested format is not available/i,
+      /HTTP Error 404|Video unavailable|This video has been removed|Requested format is not available|There is no video in this post/i,
     exitCodeHint: null,
     defaultMaxAttempts: 0,
     defaultBackoffMs: null,

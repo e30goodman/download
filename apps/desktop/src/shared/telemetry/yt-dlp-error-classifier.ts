@@ -94,7 +94,8 @@ const CATEGORY_RULES: readonly CategoryRule[] = [
     patterns: [
       'requested format is not available',
       'no video formats found',
-      'no video could be found in this tweet'
+      'no video could be found in this tweet',
+      'there is no video in this post'
     ]
   },
   {

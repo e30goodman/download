@@ -73,6 +73,12 @@ const DOWNLOAD_ERROR_GUIDANCE_RULES: DownloadErrorGuidanceRule[] = [
     ]
   },
   {
+    // Instagram photo / ad image posts have no video stream for yt-dlp.
+    message:
+      'This Instagram post is a photo without video or audio. Switch the download type to Video to save the image, or open a Reel / video post for audio.',
+    patterns: ['there is no video in this post']
+  },
+  {
     // GitHub issue #294 is usually a stale extractor/format selection mismatch.
     message:
       'This source no longer exposes the requested format. Refresh the video info and choose another available format.',

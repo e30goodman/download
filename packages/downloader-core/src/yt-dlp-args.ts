@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { parseBrowserCookiesSetting } from './browser-cookies-setting'
 import type { OneClickContainerOption } from './format-preferences'
+import { appendYtDlpPluginDirs } from './instagram'
 
 export interface YtDlpDownloadSettings {
   downloadPath?: string
@@ -393,6 +394,7 @@ export const buildDownloadArgs = (
     args.push(...jsRuntimeArgs)
   }
 
+  appendYtDlpPluginDirs(args)
   args.push(options.url)
   return args
 }
@@ -434,6 +436,7 @@ export const buildVideoInfoArgs = (
     args.push(...jsRuntimeArgs)
   }
 
+  appendYtDlpPluginDirs(args)
   args.push(url)
   return args
 }
@@ -477,6 +480,7 @@ export const buildPlaylistInfoArgs = (
     args.push(...jsRuntimeArgs)
   }
 
+  appendYtDlpPluginDirs(args)
   args.push(url)
   return args
 }

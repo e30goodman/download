@@ -35,6 +35,7 @@ describe('ErrorClassifier rules (design §7.1)', () => {
     ['ERROR: Sign in to confirm your age', 'auth-required'],
     ['This video is not available in your country', 'geo-blocked'],
     ['HTTP Error 404: not found', 'not-found'],
+    ['ERROR: [Instagram] abc: There is no video in this post', 'not-found'],
     ['ENOSPC: no space left on device', 'disk-full'],
     ['EACCES: permission denied', 'permission-denied'],
     [
