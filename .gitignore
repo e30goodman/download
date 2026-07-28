@@ -20,3 +20,6 @@ labels/
 statuses/
 
 .env
+
+__pycache__/
+*.py[cod]
