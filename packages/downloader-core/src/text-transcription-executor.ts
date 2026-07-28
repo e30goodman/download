@@ -27,6 +27,7 @@ import { killProcessTree } from '@vidbee/task-queue/process'
 import { virtualError } from '@vidbee/task-queue'
 
 import { isUsableTranscript, subtitleFileToPlainText } from './subtitle-plain-text'
+import { normalizeDownloadUrl } from './normalize-download-url'
 import type { DownloadRuntimeSettings } from './types'
 import type { YtDlpTaskOptions } from './yt-dlp-executor'
 import {
@@ -369,7 +370,7 @@ export class TextTranscriptionExecutor implements Executor {
         'vtt/srt/best',
         '-o',
         `${subsOut}.%(ext)s`,
-        ctx.input.url
+        normalizeDownloadUrl(ctx.input.url)
       ]
       await spawnTracked(ytDlpPath, subsArgs, 'yt-dlp')
       if (cancelRequested) {
@@ -407,7 +408,7 @@ export class TextTranscriptionExecutor implements Executor {
           'bestaudio[abr<=96]/bestaudio/best',
           '-o',
           audioOut,
-          ctx.input.url
+          normalizeDownloadUrl(ctx.input.url)
         ]
         const audioResult = await spawnTracked(ytDlpPath, audioArgs, 'yt-dlp', (line) => {
           mapDownloadProgress(line, 35, 54)

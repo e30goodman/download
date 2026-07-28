@@ -2,6 +2,7 @@ const PLATFORM_LABELS: Record<string, string> = {
 	bilibili: "Bilibili",
 	facebook: "Facebook",
 	instagram: "Instagram",
+	threads: "Threads",
 	niconico: "Niconico",
 	reddit: "Reddit",
 	soundcloud: "SoundCloud",
@@ -37,6 +38,9 @@ const resolvePlatformFromUrl = (url: string): string | null => {
 		}
 		if (hostname.includes("instagram.com")) {
 			return "Instagram";
+		}
+		if (hostname.includes("threads.com") || hostname.includes("threads.net")) {
+			return "Threads";
 		}
 		if (hostname.includes("tiktok.com")) {
 			return "TikTok";

@@ -73,5 +73,10 @@ export {
   probeInstagramHasAudio,
   resolveYtDlpPluginDirs
 } from './instagram'
+export {
+  extractThreadsShortcode,
+  isThreadsUrl,
+  normalizeDownloadUrl
+} from './normalize-download-url'
 export type { YtDlpExecutorOptions, YtDlpTaskOptions } from './yt-dlp-executor'
 export { YtDlpExecutor } from './yt-dlp-executor'

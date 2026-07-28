@@ -19,6 +19,11 @@ describe("resolvePlatformLabel", () => {
 		).toBe("Instagram");
 		expect(
 			resolvePlatformLabel({
+				url: "https://www.threads.com/@user/post/DbVLrkkALlv",
+			}),
+		).toBe("Threads");
+		expect(
+			resolvePlatformLabel({
 				url: "https://x.com/user/status/1",
 			}),
 		).toBe("Twitter");
