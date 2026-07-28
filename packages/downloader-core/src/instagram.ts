@@ -132,4 +132,4 @@ export const probeInstagramHasAudio = (
 }
 
 export const INSTAGRAM_NO_VIDEO_MESSAGE =
-  'This Instagram post has no video or audio to download (photo-only). Try Video type to save the image.'
+  'Instagram did not expose an audio/video stream for this post. It may be photo-only, or this media may require fresh cookies/authentication.'

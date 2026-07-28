@@ -73,9 +73,10 @@ const DOWNLOAD_ERROR_GUIDANCE_RULES: DownloadErrorGuidanceRule[] = [
     ]
   },
   {
-    // Instagram photo / ad image posts have no video stream for yt-dlp.
+    // Instagram may hide streams on logged-out requests; the same text is
+    // also returned for genuine photo-only posts.
     message:
-      'This Instagram post is a photo without video or audio. Switch the download type to Video to save the image, or open a Reel / video post for audio.',
+      'Instagram did not expose a playable stream for this post. If this media should have audio/video, refresh signed-in cookies in Settings and retry. If it is a photo post, switch to Video type to save the image.',
     patterns: ['there is no video in this post']
   },
   {
