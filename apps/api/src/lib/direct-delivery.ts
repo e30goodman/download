@@ -141,11 +141,13 @@ export const selectDirectDeliveryCandidate = (
   }
 
   const extension = format.ext?.trim().toLowerCase() || 'mp4'
-  const title = sanitizeFilenamePart(raw.title?.trim() || raw.id?.trim() || 'download')
+  const author = sanitizeFilenamePart(
+    raw.uploader?.trim() || raw.title?.trim() || raw.id?.trim() || 'download'
+  )
   const size = format.filesize ?? format.filesize_approx
   return {
     url: format.url?.trim() ?? '',
-    filename: `${title}.${sanitizeFilenamePart(extension)}`,
+    filename: `Video by ${author} via e30goodman.${sanitizeFilenamePart(extension)}`,
     mime: MIME_BY_EXTENSION[extension],
     contentLength:
       typeof size === 'number' && Number.isFinite(size) && size >= 0 ? Math.trunc(size) : undefined

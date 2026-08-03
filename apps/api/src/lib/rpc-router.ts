@@ -14,6 +14,7 @@ import { projectTaskForApi } from './projection'
 import { withPublicSessionMutationLock } from './public-session-mutation-lock'
 import {
   type ApiContext,
+  buildPublicSiteFilenameTemplate,
   isPublicSiteEnabled,
   requirePublicSessionId,
   taskBelongsToPublicSession
@@ -500,12 +501,7 @@ export const rpcRouter = os.router({
             const result = await taskQueue.add({
               input: {
                 url: entry.url,
-                kind:
-                  input.type === 'audio'
-                    ? 'audio'
-                    : input.type === 'text'
-                      ? 'text'
-                      : 'video',
+                kind: input.type === 'audio' ? 'audio' : input.type === 'text' ? 'text' : 'video',
                 title: entry.title,
                 thumbnail: entry.thumbnail,
                 playlistId: groupId,
@@ -517,7 +513,7 @@ export const rpcRouter = os.router({
                   audioFormatIds: input.audioFormatIds,
                   customDownloadPath: isPublicSiteEnabled ? undefined : input.customDownloadPath,
                   customFilenameTemplate: isPublicSiteEnabled
-                    ? undefined
+                    ? buildPublicSiteFilenameTemplate(input.type)
                     : input.customFilenameTemplate,
                   containerFormat: input.containerFormat,
                   settings: sanitizeRuntimeSettings(input.settings),
@@ -596,12 +592,7 @@ export const rpcRouter = os.router({
           const result = await taskQueue.add({
             input: {
               url: source.url,
-              kind:
-                input.type === 'audio'
-                  ? 'audio'
-                  : input.type === 'text'
-                    ? 'text'
-                    : 'video',
+              kind: input.type === 'audio' ? 'audio' : input.type === 'text' ? 'text' : 'video',
               title: source.title,
               thumbnail: source.thumbnail,
               playlistId: input.playlistId,
@@ -615,7 +606,7 @@ export const rpcRouter = os.router({
                 endTime: input.endTime,
                 customDownloadPath: isPublicSiteEnabled ? undefined : input.customDownloadPath,
                 customFilenameTemplate: isPublicSiteEnabled
-                  ? undefined
+                  ? buildPublicSiteFilenameTemplate(input.type)
                   : input.customFilenameTemplate,
                 containerFormat: input.containerFormat,
                 settings: sanitizeRuntimeSettings(input.settings),

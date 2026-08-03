@@ -817,29 +817,42 @@ export const DownloadPage = () => {
 		const nextId = download.entryType === "browser" ? download.id : undefined;
 		const handedOffAt =
 			download.entryType === "browser" ? download.handedOffAt : Date.now();
+		const nextRecord = createBrowserHandedOffRecord({
+			filename: `${download.title || "download"}.${nextExt}`,
+			handedOffAt,
+			id: nextId,
+			selectedFormat: buildSelectedFormatForRowPreset({
+				type,
+				preset,
+				container,
+				previous: download.selectedFormat,
+			}),
+			thumbnail: download.thumbnail,
+			title: download.title,
+			type,
+			url: download.url,
+		});
+
+		// Commit type/format immediately so Download uses the latest selection.
+		addBrowserDownloadRecord(nextRecord);
+		setAllRecords((current) =>
+			current.map((record) =>
+				record.entryType === "browser" && nextId && record.id === nextId
+					? {
+							...nextRecord,
+							status: startingBrowserDownloadIdsRef.current.has(nextId)
+								? "processing"
+								: nextRecord.status,
+						}
+					: record,
+			),
+		);
 
 		if (download.entryType === "history") {
 			await orpcClient.history.removeItems({ ids: [download.id] });
 			pruneSelectedIds([download.id]);
 		}
 
-		addBrowserDownloadRecord(
-			createBrowserHandedOffRecord({
-				filename: `${download.title || "download"}.${nextExt}`,
-				handedOffAt,
-				id: nextId,
-				selectedFormat: buildSelectedFormatForRowPreset({
-					type,
-					preset,
-					container,
-					previous: download.selectedFormat,
-				}),
-				thumbnail: download.thumbnail,
-				title: download.title,
-				type,
-				url: download.url,
-			}),
-		);
 		await refreshData();
 	};
 
@@ -921,51 +934,70 @@ export const DownloadPage = () => {
 		if (download.entryType !== "browser" || !download.url) {
 			return;
 		}
-		if (startingBrowserDownloadIdsRef.current.has(download.id)) {
+		// Prefer latest localStorage selection — type change may have landed after
+		// the row prop was rendered (Audio selected → Download must not use Video).
+		const latest =
+			readBrowserDownloadHistory().find(
+				(record) => record.id === download.id,
+			) ?? download;
+		if (startingBrowserDownloadIdsRef.current.has(latest.id)) {
 			return;
 		}
-		startingBrowserDownloadIdsRef.current.add(download.id);
+		startingBrowserDownloadIdsRef.current.add(latest.id);
 		setAllRecords((current) =>
 			current.map((record) =>
-				record.entryType === "browser" && record.id === download.id
-					? { ...record, status: "processing" }
+				record.entryType === "browser" && record.id === latest.id
+					? { ...record, ...latest, status: "processing" }
 					: record,
 			),
 		);
 		const startingToastId = toast.loading(t("download.processing"));
 
 		try {
-			const preset = inferRowFormatPreset(download);
+			const preset = inferRowFormatPreset(latest);
 			const container =
-				download.type === "video"
-					? inferVideoContainerFromDownload(download)
+				latest.type === "video"
+					? inferVideoContainerFromDownload(latest)
 					: undefined;
 			const presetFormats = buildFormatSelectorFromPreset({
-				type: download.type,
+				type: latest.type,
 				preset,
 			});
 
 			const created = await orpcClient.downloads.create({
-				url: download.url,
-				type: download.type,
-				title: download.title,
-				thumbnail: download.thumbnail,
+				url: latest.url,
+				type: latest.type,
+				title: latest.title,
+				thumbnail: latest.thumbnail,
 				format: presetFormats.format,
 				audioFormat: presetFormats.audioFormat,
 				containerFormat: container,
 				settings: readOrpcDownloadSettings(),
 			});
 			const taskId = created.download.id;
-			const filename =
-				download.savedFileName?.trim() || `${download.title || "download"}`;
+			const fallbackFilename =
+				latest.savedFileName?.trim() || `${latest.title || "download"}`;
 
-			removeBrowserDownloadRecords([download.id]);
+			removeBrowserDownloadRecords([latest.id]);
 			await refreshData();
 
 			const waitResult = await waitForServerDownload(taskId);
 
 			if (waitResult === "completed") {
 				if (siteConfig.isPublicSite) {
+					let filename = fallbackFilename;
+					try {
+						const historyResult = await orpcClient.history.list();
+						const completed = historyResult.history.find(
+							(record) => record.id === taskId,
+						);
+						const serverName = completed?.savedFileName?.trim();
+						if (serverName) {
+							filename = serverName;
+						}
+					} catch {
+						// Keep the fallback name if history is temporarily unreachable.
+					}
 					triggerBrowserDownload(createBrowserDownloadUrl(taskId), filename);
 				}
 				toast.success(t("notifications.downloadCompleted"));
@@ -985,7 +1017,7 @@ export const DownloadPage = () => {
 			console.error("Failed to start queued browser download:", error);
 			setAllRecords((current) =>
 				current.map((record) =>
-					record.entryType === "browser" && record.id === download.id
+					record.entryType === "browser" && record.id === latest.id
 						? { ...record, status: download.status }
 						: record,
 				),
@@ -1000,7 +1032,7 @@ export const DownloadPage = () => {
 			);
 		} finally {
 			toast.dismiss(startingToastId);
-			startingBrowserDownloadIdsRef.current.delete(download.id);
+			startingBrowserDownloadIdsRef.current.delete(latest.id);
 		}
 	};
 

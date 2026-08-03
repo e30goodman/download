@@ -87,6 +87,21 @@ const sanitizeFilenamePart = (value: string): string => {
   return safe.slice(0, 180) || 'transcript'
 }
 
+/** Minimal yt-dlp-style token expand for text transcript basenames. */
+const materializeFilenameTemplate = (
+  template: string,
+  values: Readonly<Record<string, string>>
+): string =>
+  template.replace(/%\(([^)]+)\)s/g, (_match, fields: string) => {
+    for (const rawKey of fields.split(',')) {
+      const value = values[rawKey.trim()]?.trim()
+      if (value) {
+        return value
+      }
+    }
+    return values.title || values.ext || 'download'
+  })
+
 const appendCookieArgs = (args: string[], settings: DownloadRuntimeSettings): void => {
   const browserForCookies = normalizeBrowserCookiesSettingForYtDlp(settings.browserForCookies)
   const cookiesPath = settings.cookiesPath?.trim()
@@ -564,7 +579,25 @@ export class TextTranscriptionExecutor implements Executor {
         path.basename(ctx.input.url).slice(0, 80) ||
         'transcript'
       const outputExt = taskOptions.audioFormat?.trim().toLowerCase() === 'md' ? 'md' : 'txt'
-      const fileName = `${sanitizeFilenamePart(titleHint)}.${outputExt}`
+      const author =
+        taskOptions.uploader?.trim() ||
+        taskOptions.channel?.trim() ||
+        titleHint
+      const template = taskOptions.customFilenameTemplate?.trim()
+      const fileName = template
+        ? sanitizeFilenamePart(
+            path.basename(
+              materializeFilenameTemplate(template, {
+                uploader: author,
+                channel: author,
+                uploader_id: author,
+                creator: author,
+                title: titleHint,
+                ext: outputExt
+              })
+            )
+          )
+        : `${sanitizeFilenamePart(titleHint)}.${outputExt}`
       const filePath = path.join(downloadDir, fileName)
       writeFileSync(filePath, `${transcript.trim()}\n`, 'utf8')
       const size = statSync(filePath).size

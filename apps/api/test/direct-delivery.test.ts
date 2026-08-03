@@ -36,7 +36,7 @@ describe('direct delivery selection', () => {
   it('selects an exact, muxed HTTP format', () => {
     expect(selectDirectDeliveryCandidate(rawInfo, directInput)).toEqual({
       url: 'https://cdn.example.com/video.mp4?expire=2000000000',
-      filename: 'A_B_ video.mp4',
+      filename: 'Video by A_B_ video via e30goodman.mp4',
       mime: 'video/mp4',
       contentLength: 1234
     })

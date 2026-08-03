@@ -2,7 +2,6 @@ import type {
 	CreateDownloadInput,
 	DownloadType,
 	PlaylistInfo,
-	VideoFormat,
 	VideoInfo,
 } from "@vidbee/downloader-core";
 import { AddUrlPopover } from "@vidbee/ui/components/ui/add-url-popover";
@@ -14,7 +13,14 @@ import { Label } from "@vidbee/ui/components/ui/label";
 import { useAddUrlInteraction } from "@vidbee/ui/lib/use-add-url-interaction";
 import { useAddUrlShortcut } from "@vidbee/ui/lib/use-add-url-shortcut";
 import { FolderOpen, Loader2 } from "lucide-react";
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+	useCallback,
+	useEffect,
+	useId,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { useWebDownloadSettings } from "../../hooks/use-web-download-settings";
@@ -25,6 +31,7 @@ import {
 import {
 	addBrowserDownloadRecord,
 	createBrowserHandedOffRecord,
+	readBrowserDownloadHistory,
 } from "../../lib/direct-download-history";
 import {
 	buildAudioFormatPreference,
@@ -32,11 +39,11 @@ import {
 } from "../../lib/download-format-preferences";
 import { orpcClient } from "../../lib/orpc-client";
 import { readOrpcDownloadSettings } from "../../lib/orpc-download-settings";
-import type { ShareDownloadParams } from "../../lib/share-download-link";
 import {
 	buildFormatSelectorFromPreset,
 	type RowFormatSelection,
 } from "../../lib/row-format-presets";
+import type { ShareDownloadParams } from "../../lib/share-download-link";
 import { siteConfig } from "../../lib/site-config";
 import { buildSingleVideoFormatSelector } from "../../lib/video-format-selector";
 import { PlaylistDownload } from "./playlist-download";
@@ -256,11 +263,7 @@ export function DownloadDialog({
 	);
 
 	const startShareDownloadWithFormat = useCallback(
-		async (
-			targetUrl: string,
-			downloadType: DownloadType,
-			formatId: string,
-		) => {
+		async (targetUrl: string, downloadType: DownloadType, formatId: string) => {
 			const trimmedUrl = targetUrl.trim();
 			if (!trimmedUrl) {
 				toast.error(t("errors.emptyUrl"));
@@ -277,10 +280,7 @@ export function DownloadDialog({
 				);
 				const resolvedFormat =
 					downloadType === "video"
-						? buildSingleVideoFormatSelector(
-								formatId,
-								selectedFormatMetadata,
-							)
+						? buildSingleVideoFormatSelector(formatId, selectedFormatMetadata)
 						: formatId;
 
 				await orpcClient.downloads.create({
@@ -323,16 +323,14 @@ export function DownloadDialog({
 		processedShareRequestRef.current = requestKey;
 
 		const processShareRequest = async () => {
-			const downloadType =
-				shareRequest.type ?? settings.oneClickDownloadType;
+			const downloadType = shareRequest.type ?? settings.oneClickDownloadType;
 			const trimmedUrl = shareRequest.url.trim();
 			if (!trimmedUrl) {
 				onShareRequestHandled?.();
 				return;
 			}
 
-			const useOneClick =
-				settings.oneClickDownload || downloadType === "text";
+			const useOneClick = settings.oneClickDownload || downloadType === "text";
 
 			if (useOneClick) {
 				if (shareRequest.preset && shareRequest.type) {
@@ -379,7 +377,7 @@ export function DownloadDialog({
 		startShareDownloadWithPreset,
 	]);
 
-	const handleFetchVideo = useCallback(async () => {
+	const _handleFetchVideo = useCallback(async () => {
 		if (!url.trim()) {
 			toast.error(t("errors.emptyUrl"));
 			return;
@@ -477,24 +475,37 @@ export function DownloadDialog({
 						url: trimmedUrl,
 						settings: readOrpcDownloadSettings(),
 					});
+					const existing = readBrowserDownloadHistory().find(
+						(record) => record.id === pendingRecord.id,
+					);
+					// Row already started/removed — do not recreate or clobber the type.
+					if (!existing) {
+						return;
+					}
+					const nextType = existing.type;
+					const nextExt =
+						existing.selectedFormat?.ext?.trim() ||
+						(nextType === "audio"
+							? "mp3"
+							: nextType === "text"
+								? "txt"
+								: "mp4");
 					addBrowserDownloadRecord(
 						createBrowserHandedOffRecord({
-							filename: `${result.video.title || "download"}.mp4`,
+							filename: `${result.video.title || "download"}.${nextExt}`,
 							handedOffAt: pendingRecord.handedOffAt,
 							id: pendingRecord.id,
-							selectedFormat: pendingRecord.selectedFormat,
+							selectedFormat:
+								existing.selectedFormat ?? pendingRecord.selectedFormat,
 							thumbnail: result.video.thumbnail,
 							title: result.video.title || trimmedUrl,
-							type: "video",
+							type: nextType,
 							url: result.video.webpageUrl || trimmedUrl,
 						}),
 					);
 					await notifyDownloadsChanged();
 				} catch (error) {
-					console.warn(
-						"Preview unavailable after adding URL to queue:",
-						error,
-					);
+					console.warn("Preview unavailable after adding URL to queue:", error);
 				}
 			})();
 		},

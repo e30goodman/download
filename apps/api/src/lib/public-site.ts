@@ -9,6 +9,18 @@ export interface ApiContext {
 
 export const isPublicSiteEnabled = process.env.VIDBEE_PUBLIC_SITE === 'true'
 
+/** Public download site brand tag used in saved filenames. */
+export const PUBLIC_SITE_FILENAME_BRAND = 'e30goodman'
+
+/**
+ * yt-dlp / text output template:
+ * `Video by {author} via e30goodman.mp4` (also Audio / Text).
+ */
+export const buildPublicSiteFilenameTemplate = (type: 'video' | 'audio' | 'text'): string => {
+  const kind = type === 'audio' ? 'Audio' : type === 'text' ? 'Text' : 'Video'
+  return `${kind} by %(uploader,channel,uploader_id,creator,title)s via ${PUBLIC_SITE_FILENAME_BRAND}.%(ext)s`
+}
+
 export const parsePublicSessionId = (value: unknown): string | null => {
   const sessionId = Array.isArray(value) ? value[0] : value
   if (typeof sessionId !== 'string') {
