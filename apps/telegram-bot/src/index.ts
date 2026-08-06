@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { promisify } from 'node:util'
@@ -22,6 +23,7 @@ interface TrackedTask {
 
 interface BotState {
   trackedTasks: Record<string, TrackedTask>
+  publicSessionId?: string
 }
 
 const execFileAsync = promisify(execFile)
@@ -68,12 +70,6 @@ if (allowedUsers.size === 0) {
   throw new Error('TELEGRAM_ALLOWED_USERS/TELEGRAM_ADMIN_USERS must include at least one user ID.')
 }
 
-const rpcClient: ContractRouterClient<typeof downloaderContract> = createORPCClient(
-  new RPCLink({
-    url: `${apiBaseUrl}/rpc`
-  })
-)
-
 const readState = async (): Promise<BotState> => {
   try {
     const raw = await fs.readFile(stateFilePath, 'utf-8')
@@ -92,8 +88,19 @@ const writeState = async (state: BotState): Promise<void> => {
 }
 
 const state = await readState()
+const publicSessionId =
+  process.env.TELEGRAM_PUBLIC_SESSION_ID?.trim() || state.publicSessionId?.trim() || randomUUID()
+state.publicSessionId = publicSessionId
+await writeState(state)
 let watchdogFailureStreak = 0
 let lastWatchdogAlertAt = 0
+
+const rpcClient: ContractRouterClient<typeof downloaderContract> = createORPCClient(
+  new RPCLink({
+    headers: () => ({ 'x-vidbee-session': publicSessionId }),
+    url: `${apiBaseUrl}/rpc`
+  })
+)
 
 const roleOf = (telegramId: number): Role | null => {
   if (adminUsers.has(telegramId)) {
