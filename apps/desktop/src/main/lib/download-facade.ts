@@ -20,6 +20,7 @@ import path from 'node:path'
 import { PRIORITY_USER, type Task, type TaskInput, type TaskQueueAPI } from '@vidbee/task-queue'
 
 import type {
+  DownloadItem,
   DownloadOptions,
   DownloadProgress,
   PlaylistDownloadOptions,
