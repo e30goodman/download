@@ -58,7 +58,7 @@ jobs:
 
       - name: Validate release changes
         if: steps.check.outputs.update_available == 'true'
-        run: pnpm run check
+        run: pnpm run check:i18n && pnpm run typecheck
 
       - name: Upload release changes
         if: steps.check.outputs.update_available == 'true'
